@@ -1,0 +1,468 @@
+---
+title: "mifepristone"
+output: html_document
+date: "2025-03-22"
+---
+
+
+```{r Mifepristone Data}
+chemical_abortion_percentage <- data.frame(
+  Year = c(2000, 2001, 2005, 2008, 2011, 2014, 2017, 2020, 2023),
+  Percentage = c(0, 6, 14, 17, 24, 31, 39, 53, 63)
+)
+
+cleaned_data <- chemical_abortion_percentage %>%
+  filter(Percentage > 0)  # Remove rows where Percentage is <= 0
+
+# Fit the exponential model: y = a * exp(b * x)
+exp_model <- lm(Percentage ~ Year, data = chemical_abortion_percentage)
+exp_model
+
+chemical_abortion_percentage$predicted <- predict(exp_model, newdata = chemical_abortion_percentage, type = "response")
+
+ggplot(chemical_abortion_percentage, aes(x = factor(Year), y = Percentage)) +
+  geom_bar(stat = "identity", fill = "skyblue") +  # Use stat="identity" to directly use y-values
+  geom_text(aes(label = round(Percentage, 1)),  # Add labels, rounding percentages to 1 decimal place
+            vjust = -0.5,  # Position the labels above the bars
+            size = 3.5, 
+            fontface = "italic") +  # Adjust the size of the text label
+  labs(title = "Annual Percentage of Chemical Abortion",
+       x = "Year",
+       y = "Chemical Abortion % out of Total Abortions in US") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+dataMPST <- read.xlsx("data/Mifepristone Data/all cases line Listing(dxjZy).xlsx")
+
+dataMPSTpregnancy <- dataMPST %>% 
+  filter(!grepl("Cushing's Syndrome|Diabetes Mellitus|Hyperadrenocorticism|Hereditary Angioedema|Uterine Leiomyoma|Thyroidectomy|Thyroid Cancer|Prostate Cancer Metastatic|Anaemia|Arthritis|Chemotherapy|Ovarian Cancer|Endometrial Cancer|Meningioma Benign|Breast Cancer|Metastatic|Leukaemia|Adrenal Gland Cancer|Adrenal Adenoma |Covid-19 Immunisation|Hyperglycaemia|Gestational Diabetes|Meningeal Neoplasm|Meningioma|Adrenal Disorder|Benign Neoplasm Of Adrenal Gland|Hypertension|Hypothalamo-Pituitary Disorder|Hypersomnia|Cortisol Increased|Lung Neoplasm Malignant|Neoplasm|Adrenocortical Carcinoma|Anxiety", Reason.for.Use)| grepl("Product Used For Unknown Indication", Reason.for.Use) | grepl("Abortion", Reason.for.Use) | grepl("Pregnancy", Reason.for.Use) | grepl("Labour", Reason.for.Use) | grepl("Placenta", Reason.for.Use) | grepl("Etopic", Reason.for.Use) | grepl("Etopic", Reason.for.Use)) %>% 
+  filter(Sex != "Male")
+
+
+unique_responses <- dataMPSTpregnancy %>%
+  filter(!grepl("Product Used For Unknown Indication", Reason.for.Use))
+
+unique(unique_responses$Reason.for.Use)
+
+Guttmacher2020Counts <- read.csv("data/NationalAndStatePregnancy_PublicUse.csv")
+
+colnames(Guttmacher2020Counts)
+Annual <- Guttmacher2020Counts %>%
+  rename(Year = year) %>% 
+  filter(state == "US") %>%
+  select(state, Year, abortionstotal, birthstotal)
+
+chemical_abortion_percentage <- chemical_abortion_percentage %>%
+  left_join(Annual, by = "Year") %>%
+  rename(abortions_total = abortionstotal)
+
+# Ensure Date is in Date format and Abortions is numeric
+dataGuttmacherMonthly$Time <- as.Date(dataGuttmacherMonthly$Time)
+dataGuttmacherMonthly$Abortions <- as.numeric(dataGuttmacherMonthly$Abortions)
+
+# Check the structure of the dataset to ensure the columns are correct
+str(dataGuttmacherMonthly)
+
+# Now filter the dataset correctly and sum the Abortions
+total2023 <- dataGuttmacherMonthly %>%
+  filter(State == "US") %>%  # Ensure the State column contains "US" correctly
+  filter(Time >= as.Date("2023-01-01") & Time <= as.Date("2023-12-15")) %>%  # Correct date range
+  summarize(total_abortions = sum(Abortions))  # Summing Abortions
+         
+print(total2023)
+chemical_abortion_percentage$abortions_total[chemical_abortion_percentage$Year == "2023"] <- total2023$total_abortions
+
+chemical_abortion_percentage <- chemical_abortion_percentage %>% 
+  mutate(chemical_count = round((Percentage/100) *abortions_total))
+
+ggplot(chemical_abortion_percentage, aes(x = factor(Year), y = chemical_count)) +
+  geom_bar(stat = "identity") +  # Use stat="identity" to directly use y-values
+  labs(title = "Chemical Abortion Count by Year",
+       x = "Year",
+       y = "Chemical Abortion Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  +  # Rotate x-axis labels for readability
+  scale_y_continuous(labels = scales::comma_format())
+```
+
+```{r Mifepristone EDA}
+dataMPSTpregnancy$Event.Date <- as.Date(dataMPSTpregnancy$Event.Date, format = "%d-%b-%Y")
+dataMPSTpregnancy$"Initial.FDA.Received.Date" <- as.Date(dataMPSTpregnancy$"Initial.FDA.Received.Date" , format = "%d-%b-%Y")
+
+# Create a new column with the minimum date of either Event.Date or Latest.FDA.Recieved.Date
+dataMPSTpregnancy <- dataMPSTpregnancy %>%
+  mutate(Min.Date = pmin(Event.Date, Initial.FDA.Received.Date, na.rm = TRUE))
+
+unique(dataMPSTpregnancy$Serious)
+unique(dataMPSTpregnancy$Outcomes)
+
+# Count the number of cases per date
+# Create a new column with the minimum date of either Event.Date or Initial.FDA.Received.Date
+dataMPSTpregnancy <- dataMPSTpregnancy %>%
+  mutate(Min.Date = pmin(Event.Date, Initial.FDA.Received.Date, na.rm = TRUE))
+
+# Count the number of cases per Min.Date, and count the number of Serious and Non-Serious cases
+date_counts <- dataMPSTpregnancy %>%
+  group_by(Min.Date) %>%
+  summarize(
+    total_cases = n(),
+    serious_cases = sum(Serious == "Serious", na.rm = TRUE),  # Count the serious cases
+    non_serious_cases = sum(Serious == "Non-Serious", na.rm = TRUE),  # Count the non-serious cases
+    deaths = sum(grepl("Died", Outcomes, ignore.case = TRUE), na.rm = TRUE),  # Count where Outcomes includes "Died"
+    .groups = "drop"
+  ) %>%
+  arrange(Min.Date)
+
+ggplot(date_counts, aes(x = Min.Date)) +
+  geom_line(aes(y = total_cases, color = "Total Cases"), size = 1) +
+  geom_line(aes(y = serious_cases, color = "Serious Cases"), size = 1) +
+  geom_line(aes(y = non_serious_cases, color = "Non-Serious Cases"), size = 1) +
+  geom_line(aes(y = deaths, color = "Deaths"), size = 1) +
+  labs(
+    title = "Mifepristone Adverse Event Case Counts Over Time by Date Received",
+    x = "Date Report Recieved",
+    y = "Count",
+    color = "Case Type"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels for readability
+  ) +
+  scale_x_date(
+    breaks = "2 years",  # Set the interval to 2 years
+    date_labels = "%b %Y"  # Format the date labels as Month Year (e.g., Jan 2022)
+  )
+
+
+date_counts <- date_counts %>%
+  mutate(Year = year(Min.Date))  # Extract year using lubridate's year() function
+
+collapsed_by_year <- date_counts %>%
+  group_by(Year) %>%
+  summarize(
+    total_cases = sum(total_cases, na.rm = TRUE),
+    serious_cases = sum(serious_cases, na.rm = TRUE),
+    non_serious_cases = sum(non_serious_cases, na.rm = TRUE),
+    deaths = sum(deaths, na.rm = TRUE),
+    .groups = "drop"  # Removes grouping after summarizing
+  )
+
+# View the collapsed data
+print(collapsed_by_year)
+
+collapsed_by_year_long <- collapsed_by_year %>%
+  pivot_longer(cols = c(serious_cases, non_serious_cases, deaths), 
+               names_to = "case_type", 
+               values_to = "count") 
+
+# Separate the deaths data for the line plot
+collapsed_by_year_long_deaths <- collapsed_by_year_long %>%
+  filter(case_type == "deaths")
+
+collapsed_by_year_long <- collapsed_by_year_long %>% filter(case_type != "deaths")
+
+# Plot with bars for serious_cases and non_serious_cases, and line for deaths
+ggplot(collapsed_by_year_long, aes(x = factor(Year), y = count, fill = case_type)) +
+
+  geom_bar(stat = "identity", position = "stack") +
+  geom_line(data = collapsed_by_year_long_deaths, 
+            aes(x = factor(Year), y = count, group = 1, color = "deaths"), 
+            size = 1) +
+  geom_vline(xintercept = which(levels(factor(collapsed_by_year_long$Year)) == "2016") -0.5, 
+             color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "FDA FAERS Mifepristone Adverse Event Cases by Year",
+       x = "Year",
+       y = "Count",
+       fill = "Case Type",
+       color = "Deaths") +
+    theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_manual(values = c("deaths" = "red"), label = c("deaths" = "Deaths")) + 
+ scale_fill_manual(values = c("non_serious_cases" = "khaki", "serious_cases" = "steelblue"), label = c("non_serious_cases" = "Non Serious Cases", "serious_cases" = "Serious Cases"))  
+```
+
+```{r Mifepristone Adverse Events Estimation}
+adratio <- 0 
+dratio <- 0 
+
+rate<- function(year) {
+  adratio <- collapsed_by_year$total_cases[collapsed_by_year$Year == year] /chemical_abortion_percentage$chemical_count[chemical_abortion_percentage$Year == year] 
+
+dratio <- collapsed_by_year$deaths[collapsed_by_year$Year == year] / chemical_abortion_percentage$chemical_count[chemical_abortion_percentage$Year == year] 
+
+return(adratio/dratio)
+}
+
+rate("2014")
+
+chemical_abortion_percentage <- chemical_abortion_percentage %>% left_join(collapsed_by_year)
+
+# Apply the 'rate()' function row-wise
+chemical_abortion_percentage <- chemical_abortion_percentage %>%
+  rowwise() %>%
+  mutate(drr = rate(Year)) %>%
+  ungroup()
+
+
+a <- 0
+sumab <- 0 
+c <- 0
+d <- 0 
+
+s <- function(year) {
+  a <- chemical_abortion_percentage$deaths[chemical_abortion_percentage$Year == year]
+  sumab <- chemical_abortion_percentage$total_cases[chemical_abortion_percentage$Year == year] 
+  c <- chemical_abortion_percentage$total_cases[chemical_abortion_percentage$Year == year] - chemical_abortion_percentage$deaths[chemical_abortion_percentage$Year == year]
+  d <- chemical_abortion_percentage$chemical_count[chemical_abortion_percentage$Year == year] - c
+  
+  lnSD <- sqrt((1/a) - (1/(sumab) + (1/c) - (1/(c+d))))
+  return(lnSD)
+}
+
+chemical_abortion_percentage <- chemical_abortion_percentage %>%
+  rowwise() %>%
+  mutate(lower = -exp(s(Year)), upper_deaths = exp(s(Year))) %>%
+  ungroup()
+
+# Convert 'Year' to numeric if it's not already
+chemical_abortion_percentage$Year <- as.numeric(chemical_abortion_percentage$Year)
+
+# Filter data for years under 2016
+chemical_abortion_percentage_filtered <- chemical_abortion_percentage[chemical_abortion_percentage$Year < 2016, ]
+
+# Calculate the weighted average of 'drrs' based on 'chemical_count'
+weighted_drr <- sum(chemical_abortion_percentage_filtered$drr * chemical_abortion_percentage_filtered$chemical_count, na.rm = T) / sum(chemical_abortion_percentage_filtered$chemical_count)
+
+# Print the weighted average
+weighted_drr
+
+weighted_drr*collapsed_by_year$deaths[collapsed_by_year$Year == "2017"]
+
+weighted_drr*collapsed_by_year$deaths[collapsed_by_year$Year == "2017"] - collapsed_by_year$total_cases[collapsed_by_year$Year == "2017"]
+
+weighted_drr*collapsed_by_year$deaths[collapsed_by_year$Year == "2020"]
+
+weighted_drr*collapsed_by_year$deaths[collapsed_by_year$Year == "2020"] - collapsed_by_year$total_cases[collapsed_by_year$Year == "2020"]
+
+weighted_drr*collapsed_by_year$deaths[collapsed_by_year$Year == "2023"]
+
+weighted_drr*collapsed_by_year$deaths[collapsed_by_year$Year == "2023"] - collapsed_by_year$total_cases[collapsed_by_year$Year == "2023"]
+
+# Create a new data frame to store the results
+unreported_data <- data.frame(
+  Year = c(2017, 2020, 2023),
+  Total_Cases = c(
+    sum(weighted_drr * collapsed_by_year$deaths[collapsed_by_year$Year == "2017"]),
+    sum(weighted_drr * collapsed_by_year$deaths[collapsed_by_year$Year == "2020"]),
+    sum(weighted_drr * collapsed_by_year$deaths[collapsed_by_year$Year == "2023"])
+  ),
+  Unreported_Cases = c(weighted_drr*collapsed_by_year$deaths[collapsed_by_year$Year == "2017"] - collapsed_by_year$total_cases[collapsed_by_year$Year == "2017"],
+weighted_drr*collapsed_by_year$deaths[collapsed_by_year$Year == "2020"] - collapsed_by_year$total_cases[collapsed_by_year$Year == "2020"],
+   weighted_drr*collapsed_by_year$deaths[collapsed_by_year$Year == "2023"] - collapsed_by_year$total_cases[collapsed_by_year$Year == "2023"])
+)
+
+print(unreported_data)
+
+unreported_data
+
+#trying to get variance 
+weighted_variance <- sum(chemical_abortion_percentage_filtered$chemical_count * (chemical_abortion_percentage_filtered$drr - weighted_drr)^2, na.rm = TRUE) / sum(chemical_abortion_percentage_filtered$chemical_count, na.rm = TRUE)
+
+filtered_data <- chemical_abortion_percentage[chemical_abortion_percentage$Year < 2016, ]
+
+sum(filtered_data$chemical_count)
+
+# Sum the total cases and total deaths for the filtered data
+total_uses_before_2016 <- sum(filtered_data$chemical_count, na.rm = TRUE)
+total_cases_before_2016 <- sum(filtered_data$total_cases, na.rm = TRUE)
+total_deaths_before_2016 <- sum(filtered_data$deaths, na.rm = TRUE)
+
+p <- total_deaths_before_2016/total_uses_before_2016
+
+var_c <- total_uses_before_2016*p*(1-p)
+var_c
+
+chemCI <- function(year){
+  deaths_new_year <- collapsed_by_year$deaths[collapsed_by_year$Year == year]
+  var <- (deaths_new_year/total_deaths_before_2016^2)*var_c
+  estimate <- unreported_data$Unreported_Cases[unreported_data$Year == year]
+  se <- sqrt(var)
+  total_estimate <- unreported_data$Total_Cases[unreported_data$Year == year]
+  
+  ci_lower_unreported <- estimate - 1.96 * se
+  ci_upper_unreported <- estimate + 1.96 * se
+  
+  ci_lower_total <- total_estimate - 1.96 * se
+  ci_upper_total <- total_estimate + 1.96 * se
+
+  return(c(ci_lower_unreported, ci_upper_unreported, ci_lower_total, ci_upper_total))  # Return a vector of all bounds
+}
+
+# Apply chemCI function and store the bounds for both Unreported and Total Cases
+unreported_data <- unreported_data %>%
+  rowwise() %>%
+  mutate(
+    CI_bounds = list(chemCI(Year)),  # Apply chemCI() and store as a list
+    CI_string = paste(
+      "(", CI_bounds[[1]][1], CI_bounds[[2]][1], ")", sep = ", "),
+    ci_total = paste("(", CI_bounds[[3]][1], CI_bounds[[4]][1], ")",
+      sep = ", ")
+  ) %>%
+  select(-CI_bounds) 
+
+```
+
+```{r whole thing on FDA reports}
+cumulative_fda <- data.frame(
+  Year = c("2012-10-31", "2018-12-31", "2021-06-21","2022-12-31","2024-12-31"), 
+  women_uses = c(NA, 3700000, 4900000, 5900000, 7500000), 
+  deaths = c(NA, 24, 26, 32, 36), 
+  cases = c(2740, 4195, 4207, 4218, 4252), 
+  hospitalizations_excluding_deaths = c(768,1042,1045, 1049, 1056),
+  require_transfusions = c(416, 599,603, 604, 606),
+  infections = c(308, 412, 413, 418, 422), 
+  severe_infections = c(57, 69, 70, 75, 79))
+
+cumulative_fda$Year <- as.Date(cumulative_fda$Year)
+
+ggplot(cumulative_fda, aes(x = Year, y = deaths)) +
+  geom_line(color = "red") +
+  geom_point(color = "red") +
+  labs(title = "Deaths Over the Years", x = "Year", y = "Deaths") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Reshape the data to long format
+cumulative_fda_long1 <- cumulative_fda %>%
+  pivot_longer(cols = c(deaths, cases, hospitalizations_excluding_deaths, infections, severe_infections),
+               names_to = "Category", values_to = "Count")
+
+cumulative_fda_long1$Year <- as.Date(cumulative_fda_long1$Year)
+
+# Plot all variables in one graph
+ggplot(cumulative_fda_long1, aes(x = Year, y = Count, color = Category, group = Category)) +
+  geom_line(size = 1.2) +  # Line for each category
+  geom_point(size = 3) +    # Points for each category
+  labs(title = "Trends of Different Variables Over the Years", 
+       x = "Year", 
+       y = "Count", 
+       color = "Category") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_manual(values = c("women_uses" = "blue", 
+                                "deaths" = "red", 
+                                "cases" = "green", 
+                                "hospitalizations_excluding_deaths" = "purple", 
+                                "infections" = "orange", 
+                                "severe_infections" = "brown"))
+
+cumulative_fda <- cumulative_fda %>%
+  mutate(
+    cases_rate = (cases/women_uses) * 100, 
+    death_rate = (deaths / women_uses) * 100,  # Death rate as percentage
+    hospitalization_rate = (hospitalizations_excluding_deaths / women_uses) * 100,  # Hospitalization rate as percentage
+    infection_rate = (infections / women_uses) * 100,  # Infection rate as percentage
+    severe_infection_rate = (severe_infections / women_uses) * 100  # Severe infection rate as percentage
+  )
+
+# Reshape the data to long format for plotting
+cumulative_fda_long <- cumulative_fda %>%
+  pivot_longer(cols = c(cases_rate, death_rate, hospitalization_rate, infection_rate, severe_infection_rate),
+               names_to = "Rate_Type", values_to = "Rate")
+
+cumulative_fda_long$Year <- as.Date(cumulative_fda_long$Year)
+
+# Plot the rates over time
+ggplot(cumulative_fda_long, aes(x = Year, y = Rate, color = Rate_Type, group = Rate_Type)) +
+  geom_line(size = 1.2) +  # Line for each rate
+  geom_point(size = 3) +    # Points for each rate
+  labs(title = "Rates Over Time (as Percentages)", 
+       x = "Year", 
+       y = "Rate (%)", 
+       color = "Rate Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_manual(values = c("death_rate" = "red", 
+                                "hospitalization_rate" = "purple", 
+                                "infection_rate" = "blue", 
+                                "severe_infection_rate" = "khaki", "cases_rate" = "pink"))
+
+```
+
+
+```{r Mifepristone Death Disrepency eda}
+chemical_abortion_percentage <- chemical_abortion_percentage %>% 
+  mutate(death_predicted = chemical_count * (0.8/100000), 
+         lower = chemical_count * (0.2/100000), 
+         upper = chemical_count * (2.4/100000))
+         
+chemical_death <- chemical_abortion_percentage %>%
+  select(Year, death_predicted, deaths, lower, upper) %>% 
+  rename(deaths_actual = deaths)
+  
+chemical_death <- chemical_death %>%
+  pivot_longer(cols = c(death_predicted, deaths_actual), 
+               names_to = "Type", 
+               values_to = "Count")
+
+ggplot(chemical_death, aes(x = factor(Year), y = Count, fill = Type)) +
+  geom_bar(stat = "identity", position = "dodge") + 
+  geom_errorbar(data = subset(chemical_death, Type == "death_predicted"), 
+                aes(ymin = Count -lower, ymax = Count + upper,), 
+                position = position_dodge(width = 0.8), 
+                width = 0.25) + 
+  labs(title = "Mifepristone FDA Reported Deaths vs Predicted Deaths by Year",
+       x = "Year",
+       y = "Deaths") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_fill_manual(values = c("skyblue", "tomato"), labels = c("death_predicted" = "Predicted Deaths", "deaths_actual" = "Reported Deaths"))
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+
+# Create the data frame
+data <- data.frame(
+  Date = c("4/30/11", "10/31/12", "12/31/18", "6/21/21", "12/31/22", "12/31/24"),
+  Mifepristone_Uses = c(1520000/1000, NA, 3700000/1000, 4900000/1000, 5900000/1000, 7500000/1000),
+  Deaths = c(14, NA, 24, 26, 32, 36),
+  Cases = c(2207, 2740, 4195, 4207, 4218, 4252),
+  Hospitalizations = c(612, 768, 1042, 1045, 1049, 1056),
+  Blood_Transfusions = c(339, 416, 599, 603, 604, 606),
+  Infections = c(256, 308, 412, 413, 418, 422),
+  Severe_Infections = c(48, 57, 69, 70, 75, 79)
+)
+
+# Convert Date column to Date format
+data$Date <- as.Date(data$Date, format = "%m/%d/%y")
+
+# Convert data from wide to long format
+data_long <- pivot_longer(data, cols = -Date, names_to = "Category", values_to = "Count")
+
+data_long$Category <- factor(data_long$Category, 
+                             levels = c("Mifepristone_Uses", "Deaths", "Cases", 
+                                        "Hospitalizations", "Blood_Transfusions", 
+                                        "Infections", "Severe_Infections"))
+
+
+# Plot the bar graph
+ggplot(data_long, aes(x = Date, y = Count, fill = Category)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "FDA Official Reports Cumulative Adverse Events by Year",
+       x = "Year",
+       y = "Count",
+       fill = "Adverse Event") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  scale_x_date(
+    breaks = "1 year",  # Set the interval to 2 years
+    date_labels = "%Y"  # Format the date labels as Month Year (e.g., Jan 2022)
+  )
+
+```
+

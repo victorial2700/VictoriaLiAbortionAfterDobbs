@@ -1,0 +1,681 @@
+---
+title: "results"
+output: html_document
+date: "2025-03-20"
+---
+
+```{r setup}
+library(metafor)  # Load the metafor package
+library(synthdid)
+library(data.table)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(zoo)
+library(openxlsx)
+library(lme4)
+library(pheatmap)
+library(circlize)
+library(gridExtra)
+library(patchwork)
+library(forestplot)
+library(RColorBrewer)
+library(stringr)
+options(warn=-1)
+```
+
+
+  
+  
+```{r table 1 WeCount}
+colnames(dataWC)
+
+
+label(dataWC$abortion_rate)   <- "Abortion Rate"
+label(dataWC$repf_population)   <- "Reproductive Age Women"
+
+units(dataWC$abortion_rate)   <- "1000 women age 15-44"
+units
+
+table1(~ Abortions + abortion_rate + repf_population | classification_3
+                   , data = dataWC, render="Mean (CV%)<br/>Median [Min, Max]",  transpose = TRUE)
+
+table1(~ Abortions + abortion_rate + repf_population | classification_6, data = dataWC)
+```
+
+```{r big forrest plot w ggplot}
+chapt1 <- read.xlsx("data/final_results.xlsx")
+unique(chapt1$type)
+chapt1$estimate <- as.numeric(chapt1$estimate)
+
+chapt1$type <- factor(chapt1$type, levels = rev(c("Total Ban","Bans", "6 Week" , "12 Week" , "15 Week", "18 Week",   "20 Week" , "7-20 Weeks", "22 Week"  , "24 Week"  , "Viability", "No Bans", "No Limit","Spillover", "Not Protected", "Expanded Access", "Protected",  "Hostile",  "Illegal", "Friendly", "Not Friendly")))
+
+chapt1$name <- factor(chapt1$name, levels = chapt1$name[order(chapt1$type)])
+chapt1$name <- reorder(chapt1$name, chapt1$method)
+
+chapt1_attitude <- chapt1 %>%
+  filter(grepl("Attitude|FNF", as.character(model), ignore.case = TRUE))
+
+chapt1 <- chapt1 %>%
+  filter(!grepl("Attitude|FNF", as.character(model), ignore.case = TRUE))
+
+#ALL ESTIMATES 
+ggplot(chapt1, aes(x = estimate, 
+                   y = reorder(name, method),  # Reorder based on 'type' factor levels
+                   xmin = lower_ci, 
+                   xmax = upper_ci, 
+                   color = type)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +  # Vertical line at 0
+  geom_point(size = 1.5) +  # Plot the point estimate
+  geom_errorbarh(height = 0.5) +
+  geom_text(aes(label = paste(round(estimate, 2), 
+                              "(", round(lower_ci, 2), ",", round(upper_ci, 2), ")")),
+            hjust = 0.7, vjust = -.9, size = 2.5, color = "black") + 
+  labs(title = "All Estimates on Policy",
+       x = "Estimate (with 95% CI)",
+       y = "Model",
+       color = "Type") +
+  theme_minimal() +  # Use minimal theme
+  theme(
+        plot.title = element_text(hjust = 0.5),  # Center the title
+        axis.text.y = element_text(size = 7, hjust = 0, color = "black"),    # Adjust the y-axis labels' font size
+        panel.grid.minor.x = element_blank(),  # Add grid lines at minor x-axis ticks
+        panel.grid.major.y = element_line(color = "gray85", size = 0.5),  # Darker major grid lines
+        panel.border = element_blank(), 
+        legend.text = element_text(size = 7)  # Set smaller font size for legend labels
+      ) +  # Remove panel border
+  guides(color = guide_legend(ncol = 1, byrow = TRUE)) +  # Wrap the legend into 2 columns 
+  scale_x_continuous(labels = label_number(), breaks = pretty_breaks(n = 10), 
+                     expand = expansion(mult = 0.1)) +  # Adds padding around CI limits
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 50)) +  
+  coord_cartesian(clip = "off")  # Ensures no clipping of error bars or points
+
+```
+
+```{r}
+#ATTITUDE
+
+ggplot(chapt1_attitude, aes(x = estimate, 
+                   y = reorder(name, type),  # Reorder based on 'type' factor levels
+                   xmin = lower_ci, 
+                   xmax = upper_ci, 
+                   color = type)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +  # Vertical line at 0
+  geom_point(size = 1.5) +  # Plot the point estimate
+  geom_errorbarh(height = 0.5) +  # Add horizontal error bars for confidence intervals
+    geom_text(aes(label = paste(round(estimate, 2), 
+                              "(", round(lower_ci, 2), ",", round(upper_ci, 2), ")")),
+             vjust = -1, size = 2.5, color = "black") + 
+  labs(title = "All Estimates on Attitude",
+       x = "Estimate (with 95% CI)",
+       y = "Model",
+       color = "Type") +
+  theme_minimal() +  # Use minimal theme
+  theme(
+        plot.title = element_text(hjust = 0.5),  # Center the title
+        axis.text.y = element_text(size = 8, hjust = 0, color = "black"),    # Adjust the y-axis labels' font size
+        panel.grid.major.x = element_line(),    # Remove vertical grid lines (major grid lines on x-axis)
+        panel.grid.minor.x = element_blank(),  # Add grid lines at minor x-axis ticks
+        panel.grid.minor.y = element_line(),     # Keep minor horizontal grid lines (if any)
+        panel.border = element_blank(), 
+        legend.text = element_text(size = 8)  # Set smaller font size for legend labels
+      ) +  # Remove panel border
+  guides(color = guide_legend(ncol = 1, byrow = TRUE)) +  # Wrap the legend into 2 columns 
+  scale_x_continuous(labels = label_number(), breaks = pretty_breaks(n = 8), 
+                     expand = expansion(mult = 0.1)) +  # Adds padding around CI limits
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 35)) +  
+  coord_cartesian(clip = "off")  # Ensures no clipping of error bars or points
+```
+
+```{r individual plots}
+
+# Read the data
+chapt1 <- read.xlsx("data/final_results.xlsx")
+
+# Factorize the 'type' and 'name' columns
+chapt1$type <- factor(chapt1$type, levels = rev(c("Total Ban","Bans", "6-20 Week", "6 Week", "12 Week", "15 Week", "18 Week", "20 Week", "22 Week", "24 Week", "Viability", "No Limit","Spillover")))
+
+chapt1$method <- as.factor(chapt1$method)
+chapt1$estimate <- as.numeric(chapt1$estimate)
+
+# Split data into groups
+total_bans <- chapt1 %>% filter(type == "Total Ban")
+bans <- chapt1 %>% filter(type == "Bans")
+week_groups <- chapt1 %>% filter(grepl("Week", type))  # Any type with "Week"
+viability_no_limit <- chapt1 %>% filter(type == "Viability" | type == "No Limit")
+spillover <- chapt1 %>% filter(type == "Spillover")
+
+# Function to create a ggplot for the forest plot
+create_forest_plot <- function(data, title, label_size, legend_size, width) {
+  # Reorder y-axis labels based on the 'method' column
+  data$name <- factor(data$name, levels = data$name[order(data$method)])
+
+  ggplot(data, aes(x = estimate, 
+                   y = reorder(name, method),  # Reorder based on 'type' factor levels
+                   xmin = lower_ci, 
+                   xmax = upper_ci, 
+                   color = method)) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black") +  # Vertical line at 0
+    geom_point(size = 2) +  # Plot the point estimate
+    geom_errorbarh(height = 0.5) +  # Add horizontal error bars for confidence intervals
+    labs(
+      title = paste(title, "Estimates"),  # Concatenate the title with "Estimates"
+      x = "Estimate (with 95% CI)",       # X-axis label
+      y = "Model",                        # Y-axis label
+      color = "Method"                    # Legend label for color
+    ) +
+    theme_minimal() +  # Use minimal theme
+    theme(
+          plot.title = element_text(hjust = 0.5),  # Center the title
+          axis.text.y = element_text(size = label_size, hjust = 0),    # Adjust the y-axis labels' font size
+          panel.grid.minor.x = element_line(),    # Remove vertical grid lines (minor grid lines on x-axis)
+          panel.grid.major.y = element_line(),     # Keep horizontal grid lines (major grid lines on y-axis)
+          panel.grid.minor.y = element_line(),  # Remove rotation of y-axis labels if needed
+      legend.key.size = unit(0.5, "cm"),       # Set legend key size (smaller keys)
+      legend.text = element_text(size = legend_size),    # Set legend text size (smaller text)
+      legend.title = element_text(size = 10)   # Set legend title size (optional)
+          )   +
+    scale_y_discrete(labels = function(x) str_wrap(x, width = width))  # Wrap the y-axis labels
+}
+
+# Create individual plots
+plot_total_bans <- create_forest_plot(total_bans, "Total Ban", 9, 8, 40)
+plot_bans <- create_forest_plot(bans, "Bans", 10, 9, 25)
+plot_spillover <- create_forest_plot(spillover, "Spillover", 10, 9, 20)
+
+print(plot_total_bans)
+print(plot_bans)
+print(plot_spillover)
+```
+
+```{r weeks}
+week_groups$name <- factor(week_groups$name, levels = week_groups$name[order(week_groups$type)])
+viability_no_limit$name <- factor(viability_no_limit$name, levels = viability_no_limit$name[order(viability_no_limit$type)])
+
+gest <- rbind(week_groups, viability_no_limit)
+
+gest$type <- factor(gest$type, levels = rev(c("Total Ban","Bans", "6 Week", "12 Week", "15 Week", "18 Week", "20 Week", "6-20 Week","22 Week", "24 Week", "Viability", "No Limit","Spillover")))
+
+gest$name <- factor(gest$name, levels = gest$name[order(gest$type)])
+
+
+ggplot(gest, aes(x = estimate, 
+                   y = reorder(name, type),  # Reorder based on 'type' factor levels
+                   xmin = lower_ci, 
+                   xmax = upper_ci, 
+                   color = type)) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black") +  # Vertical line at 0
+    geom_point(size = 2) +  # Plot the point estimate
+    geom_errorbarh(height = 0.5) +
+ geom_text(aes(label = paste(round(estimate, 2))), 
+            vjust = -1, size = 3, color = "black") +  # Add text annotations for the estimates
+# Add horizontal error bars for confidence intervals
+    labs(
+      title = "Specific Ban Estimates",  # Concatenate the title with "Estimates"
+      x = "Estimate (with 95% CI)",       # X-axis label
+      y = "Model",                        # Y-axis label
+      color = "Week"                    # Legend label for color
+    ) +
+    theme_minimal() +  # Use minimal theme
+    theme(
+          plot.title = element_text(hjust = 0.5),  # Center the title
+          axis.text.y = element_text(size = 8, hjust = 0, color = "black"),    # Adjust the y-axis labels' font size
+          panel.grid.minor.x = element_blank(),    # Remove vertical grid lines (minor grid lines on x-axis)
+          panel.grid.major.y = element_line(),     # Keep horizontal grid lines (major grid lines on y-axis)
+          panel.grid.minor.y = element_line(),  # Remove rotation of y-axis labels if needed
+      legend.key.size = unit(0.5, "cm"),       # Set legend key size (smaller keys)
+      legend.text = element_text(size = 8),    # Set legend text size (smaller text)
+      legend.title = element_text(size = 10)   # Set legend title size (optional)
+          )   +
+    scale_y_discrete(labels = function(x) str_wrap(x, width = 60)) + # Wrap the y-axis labels
+  scale_x_continuous(labels = scales::label_number(), breaks = scales::pretty_breaks(n = 10))  # More x-axis labels
+
+
+ggplot(viability_no_limit, aes(x = estimate, 
+                   y = reorder(name, type),  # Reorder based on 'type' factor levels
+                   xmin = lower_ci, 
+                   xmax = upper_ci, 
+                   color = type)) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black") +  # Vertical line at 0
+    geom_point(size = 2) +  # Plot the point estimate
+    geom_errorbarh(height = 0.5) +  # Add horizontal error bars for confidence intervals
+    labs(
+      title = "Viability and No Limit Estimates",  # Concatenate the title with "Estimates"
+      x = "Estimate (with 95% CI)",       # X-axis label
+      y = "Model",                        # Y-axis label
+      color = "Week"                    # Legend label for color
+    ) +
+    theme_minimal() +  # Use minimal theme
+    theme(
+          plot.title = element_text(hjust = 0.5),  # Center the title
+          axis.text.y = element_text(size = 9, hjust = 0),    # Adjust the y-axis labels' font size
+          panel.grid.minor.x = element_blank(),    # Remove vertical grid lines (minor grid lines on x-axis)
+          panel.grid.major.y = element_line(),     # Keep horizontal grid lines (major grid lines on y-axis)
+          panel.grid.minor.y = element_line(),  # Remove rotation of y-axis labels if needed
+      legend.key.size = unit(0.5, "cm"),       # Set legend key size (smaller keys)
+      legend.text = element_text(size = 10),    # Set legend text size (smaller text)
+      legend.title = element_text(size = 10)   # Set legend title size (optional)
+          )   +
+    scale_y_discrete(labels = function(x) str_wrap(x, width = 30))  # Wrap the y-axis labels
+```
+
+
+```{r Metanalaysis for Total Bans}
+# Calculate the standard error from the confidence intervals
+total_bans$se <- (total_bans$upper_ci - total_bans$lower_ci) / (2 * qnorm(0.975))
+
+total_bans <- total_bans %>% 
+  mutate(rank = case_when(
+    grepl("ME", method) ~ 2,  # Weight 1 if 'method' includes "ME"
+    grepl("SDID", method) ~ 1, # Weight 2 if 'method' includes "SDID"
+    grepl("DID", method) ~ 3,  # Weight 3 if 'method' includes "DID"
+    TRUE ~ NA_real_  # If no match, assign NA (or you could set another value)
+  ))
+
+# Run the meta-analysis using the `rma` function from the `metafor` package
+meta_analysis_tbans <- rma(yi = estimate,  # Effect size estimates
+                     sei = se,      # Standard error for each estimate
+                     data = total_bans,
+                     weights = 1/rank,
+                     method = "REML")  # Restricted maximum likelihood method
+
+# Summary of the meta-analysis
+summary(meta_analysis_tbans)
+
+a <- forest(meta_analysis_tbans,
+       slab = total_bans$name,      # Study labels
+       xlab = "Change in Abortion Rate",
+       refline = 0,            # Reference line at 1
+       main = "Total Ban Forest Plot Weighted by Method", 
+       cex=0.75)
+```
+
+
+
+```{r meta analysis for spillover}
+spillover$se <- (spillover$upper_ci - spillover$lower_ci) / (2 * qnorm(0.975))
+
+spillover <- spillover %>% 
+  mutate(name = paste(data, method))
+
+spillover <- spillover %>% 
+  mutate(rank = case_when(
+    grepl("ME", method) ~ 2,  # Weight 1 if 'method' includes "ME"
+    grepl("SDID", method) ~ 1, # Weight 2 if 'method' includes "SDID"
+    grepl("DID", method) ~ 3,  # Weight 3 if 'method' includes "DID"
+    TRUE ~ NA_real_  # If no match, assign NA (or you could set another value)
+  ))
+
+# Run the meta-analysis using the `rma` function from the `metafor` package
+meta_analysis_spillover <- rma(yi = estimate,  # Effect size estimates
+                     sei = se,      # Standard error for each estimate
+                     data = spillover,
+                     weights = 1/rank,
+                     method = "REML")  # Restricted maximum likelihood method
+
+# Summary of the meta-analysis
+summary(meta_analysis_spillover)
+
+b <- forest(meta_analysis_spillover,
+       slab = spillover$name,      # Study labels
+       xlab = "Change in Abortion Rate",
+       refline = 0,            # Reference line at 1
+       main = "Spillover Forest Plot Weighted by Method", 
+       cex=0.75)
+```
+
+```{r metaanalysis for week 6}
+week6 <- week_groups %>%
+  filter(type == "6 Week")
+
+week6$se <- (week6$upper_ci - week6$lower_ci) / (2 * qnorm(0.975))
+
+week6 <- week6 %>% 
+  mutate(name = sub(" 6 Week$", "", name))
+
+week6 <- week6 %>% 
+  mutate(rank = case_when(
+    grepl("ME", method) ~ 2,  # Weight 1 if 'method' includes "ME"
+    grepl("SDID", method) ~ 1, # Weight 2 if 'method' includes "SDID"
+    grepl("DID", method) ~ 3,  # Weight 3 if 'method' includes "DID"
+    TRUE ~ NA_real_  # If no match, assign NA (or you could set another value)
+  ))
+
+# Run the meta-analysis using the `rma` function from the `metafor` package
+meta_analysis_6 <- rma(yi = estimate,  # Effect size estimates
+                     sei = se,      # Standard error for each estimate
+                     data = week6,
+                     weights = 1/rank,
+                     method = "REML")  # Restricted maximum likelihood method
+
+# Summary of the meta-analysis
+summary(meta_analysis_6)
+
+c <- forest(meta_analysis_6,
+       slab = week6$name,      # Study labels
+       xlab = "Change in Abortion Rate",
+       refline = 0,            # Reference line at 1
+       main = "6 Week Ban Forest Plot Weighted by Method", 
+       cex=0.75)
+```
+
+```{r meta analysis bans}
+bans$se <- (bans$upper_ci - bans$lower_ci) / (2 * qnorm(0.975))
+
+bans <- bans %>% 
+  mutate(name = sub(" Bans$", "", name)) %>% 
+  filter(name != "Guttmacher SDID Pre-Viability")
+
+bans <- bans %>% 
+  mutate(rank = case_when(
+    grepl("ME", method) ~ 2,  # Weight 1 if 'method' includes "ME"
+    grepl("SDID", method) ~ 1, # Weight 2 if 'method' includes "SDID"
+    grepl("DID", method) ~ 3,  # Weight 3 if 'method' includes "DID"
+    TRUE ~ NA_real_  # If no match, assign NA (or you could set another value)
+  ))
+
+# Run the meta-analysis using the `rma` function from the `metafor` package
+meta_analysis_bans <- rma(yi = estimate,  # Effect size estimates
+                     sei = se,      # Standard error for each estimate
+                     data = bans,
+                     weights = 1/rank,
+                     method = "REML")  # Restricted maximum likelihood method
+
+# Summary of the meta-analysis
+summary(meta_analysis_bans)
+
+forest(meta_analysis_bans,
+       slab = bans$name,      # Study labels
+       xlab = "Change in Abortion Rate",
+       refline = NA,            # Reference line at 1
+       main = "Ban (General) Forest Plot Weighted by Method", 
+       cex=0.75)
+
+```
+
+
+```{r pooled variance}
+poolv <- function(data, estimate, bigse){
+data <- data %>% 
+  mutate(var = se^2)
+
+agv <- sum(data$var/nrow(data))
+agse <- sqrt((agv + (bigse)^2)/2)
+
+lo <- estimate - agse*qnorm(0.95)
+up <- estimate + agse*qnorm(0.95)
+
+
+print(paste("pooled se:",agse))
+print(paste("estimate:",estimate))
+print(paste("lower:",lo))
+print(paste("upper:",up))
+
+}
+
+#just take all the variances of the individual "studies" and then divide by the number of studies 
+summary(meta_analysis_tbans)
+summary(meta_analysis_6)
+summary(meta_analysis_bans)
+summary(meta_analysis_spillover)
+
+
+poolv(total_bans,  -0.5817  , 0.0892)
+poolv(week6,  -0.2963, 0.0843)
+poolv(bans,  -0.5629, 0.1037)
+poolv(spillover, 0.2721, 0.1010) 
+```
+
+```{r}
+# Initialize an empty data frame to store results
+result_df <- data.frame(
+  Input_Name = character(),
+  Estimate = numeric(),
+  Lower = numeric(),
+  Upper = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Modified poolv function
+poolv <- function(data, input_name, estimate, bigse) {
+  # Calculate variance for each observation and pooled standard error
+  data <- data %>% mutate(var = se^2)
+  agv <- sum(data$var / nrow(data))
+  agse <- sqrt(agv + (bigse)^2)
+  
+  # Calculate the 95% Confidence Interval
+  lo <- estimate - agse * qnorm(0.95)
+  up <- estimate + agse * qnorm(0.95)
+  
+  # Print results (can also be captured or logged if needed)
+  print(paste("pooled se:", agse))
+  print(paste("estimate:", estimate))
+  print(paste("lower:", lo))
+  print(paste("upper:", up))
+  
+  # Round the values to 3 digits
+  estimate_rounded <- round(estimate, 3)
+  lower_rounded <- round(lo, 3)
+  upper_rounded <- round(up, 3)
+  
+  # Create a new row for the result dataframe
+  new_row <- data.frame(
+    Input_Name = input_name,
+    Estimate = estimate_rounded,
+    Lower = lower_rounded,
+    Upper = upper_rounded,
+    stringsAsFactors = FALSE
+  )
+  
+  # Append the new row to the result_df dataframe
+  assign("result_df", rbind(result_df, new_row), envir = .GlobalEnv)
+}
+
+# Example usage of the modified poolv function with the 'data' and estimates
+# Assuming 'data' is your dataframe with the necessary columns (se and other data)
+# You would call it as follows:
+
+# Example data frame (replace with actual data)
+data <- data.frame(se = c(0.08, 0.12, 0.10, 0.09))  # Example standard errors
+
+# Call poolv function
+poolv(data, "total_bans", -0.5817, 0.0892)
+poolv(data, "week6", -0.2963, 0.0843)
+poolv(data, "bans", -0.5629, 0.1037)
+poolv(data, "spillover", 0.2721, 0.1010)
+
+# View the final result dataframe
+print(result_df)
+```
+
+
+```{r interpretations}
+
+statesban <- unique(dataWC$State[dataWC$classification_6 == "ban"])
+length(statesban)
+
+statesbang <- unique(dataGMCSDIDbans$State[dataGMCSDIDbans$Treated == 1])
+length(statesbang)
+
+setdiff(statesbang, statesban)
+
+total_ban_states_23 <- unique(dataWC$State[dataWC$classification_3 == "total_ban" & dataWC$Year == 2023])
+total_ban_states_22
+length(total_ban_states_23)
+
+# Identify states with a total ban in 2023
+total_ban_states_23 <- unique(dataWC$State[dataWC$classification_3 == "total_ban" & dataWC$Year == 2023])
+
+# Filter data for these states when classification_3 was "predobbs"
+predobbs_data <- dataWC[dataWC$State %in% total_ban_states_23 & dataWC$classification_3 == "preDobbs", ]
+
+# Calculate the average abortion rate
+average_abortion_rate <- mean(predobbs_data$abortion_rate, na.rm = TRUE)
+
+# Print the result
+average_abortion_rate
+
+
+week6states <- unique(dataWC$State[dataWC$classification_3 == "six_week"])
+states_with_some_bans 
+
+spilloverstates <- unique(dataWecount5$State[dataWecount5$classification_5 == "spillover_guttmacher"])
+
+spilloverstates
+
+spilloverstates2 <- unique(dataWC$State[dataWC$classification_5 == "spillover_guttmacher"])
+
+spilloverstates2
+
+model_data <- data.frame(
+  Model = c("Aggregate Total Ban", "Aggregate 6 Week", "Aggregate Bans", "Aggregate Spillover at 95%", "Aggregate Spillover at 90%"),
+  Estimate = c(-0.6138, -0.3195, -0.6579, 0.1868, 0.1868),
+  Lower_CI = c(-0.875852164057328, -0.415119275423007, -0.882175214818891, -0.0081512604906511, 0.0231917447329729),
+  Upper_CI = c(-0.351747835942672, -0.223880724576993, -0.433624785181109, 0.381751260490651, 0.350408255267027),
+  Number_States = c(length(total_ban_states), length(week6states), length(states_with_some_bans), length(spilloverstates), length(spilloverstates))
+)
+
+bigpop_2023 <- bigpop %>% 
+  filter(Year == 2023)
+
+aggregate_population <- data.frame(
+  Model = c("Aggregate Total Ban", "Aggregate 6 Week", "Aggregate Bans", "Aggregate Spillover at 95%", "Aggregate Spillover at 90%"),
+  Total_repFPopulation = c(
+    sum(bigpop_2023$repf[bigpop_2023$State %in% total_ban_states_23]),
+    sum(bigpop_2023$repf[bigpop_2023$State %in% week6states]),
+    sum(bigpop_2023$repf[bigpop_2023$State %in% statesban]), 
+    sum(bigpop_2023$repf[bigpop_2023$State %in% spilloverstates2]),
+      sum(bigpop_2023$repf[bigpop_2023$State %in% spilloverstates])
+  )
+)
+
+total_ban_abortion_rate_2023 <- sum(
+  CombinedGuttmacherCorrect$abortion_rate[
+    CombinedGuttmacherCorrect$State %in% total_ban_states & year(CombinedGuttmacherCorrect$Time) == 2023
+  ]
+)
+
+total_ban_abortion_rate_2023
+
+total_ban_abortion_rate_2019 <- sum(
+  CombinedGuttmacherCorrect$abortion_rate[
+    CombinedGuttmacherCorrect$State %in% total_ban_states & year(CombinedGuttmacherCorrect$Time) == 2019
+  ]
+)
+
+total_ban_abortion_rate_2019
+
+total_ban_abortion_count_2022 <- sum(
+  dataWecountRateCorrect$Abortions[
+    dataWecountRateCorrect$State %in% total_ban_states & year(dataWecountRateCorrect$Time) == 2022])
+
+total_ban_abortion_count_2022
+
+results <- left_join(model_data, aggregate_population)
+
+results <- results %>% 
+  mutate(
+    change_aggregate_rate = Estimate * 12,
+    aggregate_rate_lo_CI = Lower_CI * 12, 
+    aggregate_rate_up_CI = Upper_CI * 12,
+    change_aggregate_count_annual = (Estimate/1000) * Total_repFPopulation * 12,
+    aggregate_lo_CI = (Lower_CI/1000) * Total_repFPopulation * 12, 
+    aggregate_up_CI = (Upper_CI/1000) * Total_repFPopulation * 12
+  )
+results
+
+
+df_transposed <- t(results)
+
+resultssimp <- results %>% 
+  select(-Number_States, -Total_repFPopulation)
+
+resultssimp <- resultssimp %>% 
+    mutate(Estimate_Rate = paste(Estimate, " (", round(Lower_CI, 4), ", ", round(Upper_CI, 4), ")", sep = "")) %>% 
+    mutate(Estimate_Rate_agg = paste(change_aggregate_rate, " (", round(aggregate_rate_lo_CI, 4), ", ", round(aggregate_rate_up_CI, 4), ")", sep = "")) %>% 
+    mutate(Estimate_Count = paste(round(change_aggregate_count_annual, -3), " (", round(aggregate_lo_CI, -3), ", ", round(aggregate_up_CI,-3), ")", sep = ""))
+
+```
+
+#average all the CI bounds, estimate the variance from the variance estimates (natural variability within estimates) 
+current CI is measuring BETWEEN estimate variances. we also want WITHIN different estimate variances. should be able to just average them (on variance, then transform into SE)
+just take all the variances of the individual "studies" and then divide by the number of studies 
+pooled variance 
+#assumes all variance estimates have same degrees of freedom (which is not the case bc theyre different, but not that different)
+
+#How to do confint for normal transformations 
+#estimate with CI, just transform the CI the exact same way you transform the estimates 
+#problem: because the estimaets are same model on basically same dataset, violates the independence problem, so the margin of error should be much higher 
+
+```{r interpetations models with interactions}
+Sigma <- vcov(model2)
+beta <- summary(model2)$coef[, "Estimate"]
+beta
+contrast <- c(rep(0,9), 1, -1) #which terms I want 
+
+p <- as.numeric(t(beta)%*%contrast) #point_estimate
+
+v <- as.numeric(t(contrast)%*%Sigma%*%contrast) #variance 
+
+p + sqrt(v)*1.96
+p - sqrt(v)*1.96
+
+
+interp <- function(model, contrast){
+Sigma <- vcov(model)
+beta <- summary(model)$coef[, "Estimate"]
+beta
+
+p <- as.numeric(t(beta)%*%contrast) #point_estimate
+
+v <- as.numeric(t(contrast)%*%Sigma%*%contrast) #variance 
+
+upper <- p + sqrt(v)*qnorm(0.975)
+lower <- p - sqrt(v)*qnorm(0.975)
+print(paste("estimate:",p))
+print(paste("lower:",lower))
+print(paste("upwper:",upper))
+}
+
+interp(model2, c(rep(0,9), 1, -1))
+
+interp(model5, c(0,0, -1, 0, 1))
+interp(model5, c(0,0, -1, 1, 0))
+interp(model5g, c(0,0, -1, 0, 1))
+interp(model5g, c(0,0, -1, 1, 0))
+interp(model5g, c(0,0, -1, 0, 1))
+interp(model5g, c(0,0, -1, 1, 0))
+
+summary(model5)
+confint(model5)
+```
+
+```{r final}
+
+final_results <- chapt1 %>% 
+  mutate(
+    annual_estimate = estimate * 12,
+    annual_estimate_lo = lower_ci * 12, 
+    annual_estimate_up = upper_ci * 12
+) 
+
+df_transposed <- t(results)
+
+resultssimp <- results %>% 
+  select(-Number_States, -Total_repFPopulation)
+
+resultssimp <- resultssimp %>% 
+    mutate(Estimate_Rate = paste(Estimate, " (", round(Lower_CI, 4), ", ", round(Upper_CI, 4), ")", sep = "")) %>% 
+    mutate(Estimate_Rate_agg = paste(change_aggregate_rate, " (", round(aggregate_rate_lo_CI, 4), ", ", round(aggregate_rate_up_CI, 4), ")", sep = "")) %>% 
+    mutate(Estimate_Count = paste(round(change_aggregate_count_annual, -3), " (", round(aggregate_lo_CI, -3), ", ", round(aggregate_up_CI,-3), ")", sep = ""))
+```
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,814 @@
+---
+title: "births"
+output: html_document
+date: "2025-03-25"
+---
+
+```{r Births Data Wrangling}
+natalityPre2023yearRate <- read.xlsx("data/state year rateNatality 20162023 expanded.xlsx")
+
+natalityPre2023stateMonth <- read.xlsx("data/state month only Natality 2016-2023 expanded.xlsx")
+
+natality2024m <- read.xlsx("data/m.xlsx")
+
+natality2024y <- read.xlsx("data/y.xlsx")
+
+colnames(natalityPre2023stateMonth)
+
+natalityPre2023yearRate <- natalityPre2023yearRate %>% 
+  rename(State = State.of.Residence, 
+         birth_rate = Birth.Rate)
+
+natalityPre2023stateMonth <- natalityPre2023stateMonth %>% 
+  rename(State = State.of.Residence)
+
+natality2024m <- natality2024m %>% 
+  rename(State = State.of.Residence) %>% 
+  select(-Year) %>% 
+  rename(Year = Year.Code) 
+
+natality2024y <- natality2024y %>% 
+  rename(State = State.of.Residence) %>% 
+  select(-Year) %>% 
+  rename(Year = Year.Code) 
+
+annual_natality <- bind_rows(natalityPre2023yearRate, natality2024y)
+
+monthly_natality <- bind_rows(natalityPre2023stateMonth, natality2024m)
+
+monthly_natality <- monthly_natality %>% 
+  select(-Year.Code) %>% 
+  mutate(Time = as.Date(paste(Year, Month.Code, "01", sep = "-")))  
+
+monthly_natality <- left_join(monthly_natality, bigpop)
+
+monthly_natality <- monthly_natality %>% 
+  mutate(birth_rate = (Births/repf_population)*1000)
+
+# Step 1: Calculate annual growth rates (2017-2023)
+population_data <- annual_natality %>%
+  group_by(State) %>%
+  arrange(Year) %>%
+  mutate(Growth_Rate = (Total.Population - lag(Total.Population)) / lag(Total.Population)) %>%
+  filter(!is.na(Growth_Rate))  # Remove the first row (NA for growth rate)
+
+# Step 2: Calculate the average growth rate for each state (2017-2023)
+average_growth_rate <- population_data %>%
+  group_by(State) %>%
+  summarise(Avg_Growth_Rate = mean(Growth_Rate, na.rm = TRUE))
+
+# Step 3: Project population for 2024
+# Get the population of 2023 to project
+projected_population_2024 <- population_data %>%
+  filter(Year == 2023) %>%
+  left_join(average_growth_rate, by = "State") %>%
+  mutate(Projected_Population_2024 = Total.Population * (1 + Avg_Growth_Rate))
+
+# Step 4: Calculate birth rate for 2024 (if you have the births for 2024, divide it by projected population)
+# Assuming you have Births for 2024 in a separate column, you can do this:
+projected_population_2024 <- projected_population_2024 %>%
+  mutate(Birth_Rate_2024 = ifelse(!is.na(Births), (Births / Projected_Population_2024)*1000, NA))
+
+# View the results
+print(projected_population_2024)
+
+annual_natality <- annual_natality %>%
+  left_join(projected_population_2024 %>% select(State, Birth_Rate_2024, Projected_Population_2024), by = "State") %>%
+  mutate(
+    # Step 2: If the year is 2024, use the projected birth rate
+    Total.Population = ifelse(Year == 2024, Projected_Population_2024, Total.Population),
+    birth_rate = ifelse(Year == 2024, Birth_Rate_2024, birth_rate)
+  ) %>%
+  select(-Birth_Rate_2024)  %>% 
+  select(-Projected_Population_2024)  
+
+annual_natality <- left_join(annual_natality, bigpop) 
+
+annual_natality <- annual_natality %>% 
+  rename(birth_rate_total = birth_rate) %>% 
+  mutate(birth_rate = (Births/repf_population)*1000)
+
+monthly_natalityPost2020 <- monthly_natality %>%
+  filter(Year >= 2020) %>%
+  mutate(DobbsTime = ifelse(Time > as.Date("2022-07-01"), 1, 0)) %>% 
+  rename(Month_code = Month.Code) 
+```
+
+```{r Births EDA}
+selectstates <- c("California", "New Mexico", "Texas", "District of Columbia", "Florida", "Alaska", 
+                  "Massachusetts", "Vermont", "Utah", "North Dakota", "South Dakota")
+
+selected_states_data <- monthly_natality %>%
+  filter(State %in% selectstates & Year >= 2021) 
+
+non_selected_states_data <- monthly_natality %>%
+  filter(!State %in% selectstates & Year >= 2021)
+
+
+ggplot() + 
+    geom_line(data = non_selected_states_data, aes(x = Time, y = birth_rate, group = State), color = "lightgray", size = 0.2) +
+  geom_line(data = selected_states_data, aes(x = Time, y = birth_rate, color = State), size = 0.5) +
+  geom_vline(xintercept = 2022.5, color = "black", linetype = "dashed", size = 0.5) +  # Vertical line for June 2022
+  labs(title = "CDC Birth Rates Select States",
+       x = "Year",
+       y = "Births per 1000 Women of Reproductive Age") +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 8),     # Smaller legend text
+    legend.title = element_text(size = 9),    # Smaller legend title
+    legend.key.size = unit(0.4, "cm"),        # Smaller legend keys
+    legend.spacing.y = unit(0.2, "cm"),
+  axis.text.x = element_text(angle = 45, hjust = 1) 
+  )+  # Rotate x-axis labels for readability
+ scale_y_continuous(labels = scales::comma_format()) + 
+  guides(color = guide_legend(ncol = 1))  +
+       scale_x_date(labels = scales::date_format("%b %Y"), 
+                 breaks = "3 month") +  
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) 
+
+#ANNUAL 
+selected_states_data_an <- annual_natality %>%
+  filter(State %in% selectstates) %>% 
+    mutate(Year = as.Date(paste(Year, "01", "01", sep = "-")))
+
+non_selected_states_data_an <- annual_natality %>%
+  filter(!State %in% selectstates) %>% 
+    mutate(Year = as.Date(paste(Year, "01", "01", sep = "-")))
+
+ggplot() + 
+    geom_line(data = non_selected_states_data_an, aes(x = Year, y = birth_rate, group = State), color = "lightgray", size = 0.2) +
+  geom_line(data = selected_states_data_an, aes(x = Year, y = birth_rate, color = State), size = 0.5) +
+  geom_vline(xintercept = 2022.5, color = "black", linetype = "dashed", size = 0.5) +  # Vertical line for June 2022
+  labs(title = "CDC Annual Birth Rates Select States",
+       x = "Year",
+       y = "Births per 1000 Women of Reproductive Age") +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 8),     # Smaller legend text
+    legend.title = element_text(size = 9),    # Smaller legend title
+    legend.key.size = unit(0.4, "cm"),        # Smaller legend keys
+    legend.spacing.y = unit(0.2, "cm"),
+  axis.text.x = element_text(angle = 45, hjust = 1) 
+  )+  # Rotate x-axis labels for readability
+ scale_y_continuous(labels = scales::comma_format()) + 
+  guides(color = guide_legend(ncol = 1))  +
+       scale_x_date(labels = scales::date_format("%Y"), 
+                 breaks = "12 month") +  
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) 
+
+
+ggplot(monthly_natality, aes(x = Time, y = Births, color = State)) + 
+  geom_line() +
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "CDC Monthly Births by State",
+       x = "Month",
+       y = "Births") +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 8),     # Smaller legend text
+    legend.title = element_text(size = 9),    # Smaller legend title
+    legend.key.size = unit(0.4, "cm"),        # Smaller legend keys
+    legend.spacing.y = unit(0.2, "cm"),
+  axis.text.x = element_text(angle = 45, hjust = 1)         # Reduce vertical spacing between legend items
+  )+  # Rotate x-axis labels for readability
+  scale_y_continuous(labels = scales::comma_format()) + guides(color = guide_legend(ncol = 2))  +
+       scale_x_date(labels = scales::date_format("%Y"), 
+                 breaks = "12 month") +  
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+
+
+ggplot(monthly_natality, aes(x = Time, y = birth_rate, color = State)) + 
+  geom_line() +
+  geom_vline(xintercept = 2022.5, color = "black", linetype = "dashed", size = 0.5) +  # Vertical line for June 2022
+  labs(title = "CDC Monthly Birth Rate by State per 1000 in Reproductive Age Women",
+       x = "Year",
+       y = "Birth Rate per 1000 in Reproductive Age Women") +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 8),     # Smaller legend text
+    legend.title = element_text(size = 9),    # Smaller legend title
+    legend.key.size = unit(0.4, "cm"),        # Smaller legend keys
+    legend.spacing.y = unit(0.2, "cm")        # Reduce vertical spacing between legend items
+  )+  # Rotate x-axis labels for readability
+  scale_y_continuous(labels = scales::comma_format())
+
+ggplot(monthly_natalityPost2020, aes(x = Time, y = birth_rate, color = State)) + 
+  geom_line() +
+  geom_vline(xintercept = 2022.5, color = "black", linetype = "dashed", size = 0.5) +  # Vertical line for June 2022
+  labs(title = "CDC Monthly Birth Rate by States",
+       x = "Year",
+       y = "Birth Rate per 1000 in Reproductive Age Women") +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 8),     # Smaller legend text
+    legend.title = element_text(size = 9),    # Smaller legend title
+    legend.key.size = unit(0.4, "cm"),        # Smaller legend keys
+    legend.spacing.y = unit(0.2, "cm"),
+  axis.text.x = element_text(angle = 45, hjust = 1) # Reduce vertical spacing between legend items
+  )+  # Rotate x-axis labels for readability
+  scale_y_continuous(labels = scales::comma_format()) + 
+  guides(color = guide_legend(ncol = 2))  +
+       scale_x_date(labels = scales::date_format("%b %Y"), 
+                 breaks = "6 month") +  
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) 
+
+
+ggplot(annual_natality, aes(x = Year, y = birth_rate, color = State)) + 
+  geom_line() +
+  geom_vline(xintercept = 2022.5, color = "black", linetype = "dashed", size = 0.5) +  # Vertical line for June 2022
+  labs(title = "CDC Annual Birth Rate by State per 1000 in Reproductive Age Women",
+       x = "Year",
+       y = "Birth Rate per 1000 in Reproductive Age Women") +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 8),     # Smaller legend text
+    legend.title = element_text(size = 9),    # Smaller legend title
+    legend.key.size = unit(0.4, "cm"),        # Smaller legend keys
+    legend.spacing.y = unit(0.2, "cm")        # Reduce vertical spacing between legend items
+  )+  # Rotate x-axis labels for readability
+  scale_y_continuous(labels = scales::comma_format())
+
+ggplot(annual_natality, aes(x = Year, y = birth_rate_total, color = State)) + 
+  geom_line() +
+  geom_vline(xintercept = 2022.5, color = "black", linetype = "dashed", size = 0.5) +  # Vertical line for June 2022
+  labs(title = "CDC Annual Birth Rate by State per 1000 in Total Population",
+       x = "Year",
+       y = "Birth Rate per 1000 in Total Population") +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 8),     # Smaller legend text
+    legend.title = element_text(size = 9),    # Smaller legend title
+    legend.key.size = unit(0.4, "cm"),        # Smaller legend keys
+    legend.spacing.y = unit(0.2, "cm")        # Reduce vertical spacing between legend items
+  )+  # Rotate x-axis labels for readability
+  scale_y_continuous(labels = scales::comma_format())
+
+```
+
+```{r Births Right Times}
+monthly_natalityPost2020 <- left_join(monthly_natalityPost2020, classify)
+annual_natality <- left_join(annual_natality, classify)
+
+laws <- read.csv("data/laws.csv")
+
+laws <- laws %>% 
+  select(State, Status, Effective.Date, End.Date) %>% 
+  rename(effective_date = "Effective.Date") %>% 
+  rename(end_date = "End.Date")
+
+laws$effective_date <- as.Date(laws$effective_date)
+laws$end_date <- as.Date(laws$end_date)
+                            
+colnames(laws)
+
+laws <- laws %>% 
+  mutate(Status = case_when(State == "Florida" ~ "delayed_ban", State == "North Carolina" ~ "delayed_ban", State == "South Carolina" ~ "flip_flop", TRUE ~ Status)) 
+
+monthly_natalityPost2020 <- left_join(monthly_natalityPost2020, laws)
+
+monthly_natalityPost2020 <- monthly_natalityPost2020 %>% 
+  mutate(
+    collapsed3 = ifelse(
+      classification_3 == "twelve_week" | 
+      classification_3 == "fifteen_week" | 
+      classification_3 == "eighteen_week" | 
+      classification_3 == "twenty_week", 
+      "between_6_20_weeks", 
+      ifelse(
+        classification_3 == "viability" | 
+        classification_3 == "twenty_four_week" | 
+        classification_3 == "twenty_week" | 
+        classification_3 == "twenty_two_week", 
+        "viability", 
+        as.character(classification_3)  # Keep the original value if neither condition is met
+      )
+    )
+  )
+
+monthly_natalityPost2020 <- monthly_natalityPost2020 %>% 
+    mutate(
+    classification_1 = factor(classification_1, levels = c("control", "spillover_geography", "other_banned", "june_trigger")),
+    classification_2 = factor(classification_2, levels = c("not_protected","expanded_access", "protected", "hostile", "illegal")),
+    classification_3 = factor(classification_3, levels =c("no_limit", "viability", "twenty_four_week", "twenty_two_week","twenty_week", "eighteen_week", "fifteen_week", "twelve_week", "six_week", "total_ban")), 
+    collapsed3 = factor(collapsed3, levels =c("no_limit", "viability", "between_6_20_weeks", "six_week", "total_ban")),    
+    classification_4 = factor(classification_4, levels =c("friendly", "not_friendly")), 
+    classification_5 = factor(classification_5, levels =c("control5", "bans", "spillover_guttmacher"))
+    ) # Time column for dates after June 1, 2022
+
+monthly_natalityPost2020 <- monthly_natalityPost2020 %>% 
+  filter(Status != "flip_flop") %>% 
+  mutate(
+    banI = ifelse(Status == "legal", 0, 1),
+    BirthEffectDate = effective_date %m+% months(6)
+  )
+
+# monthly_natalityPost2020 <- monthly_natalityPost2020 %>%
+#   mutate(classification_3 = ifelse(Time <= as.Date("2022-06-24"), "preDobbs", classification_3))
+# 
+# #correcting the ban categories FOR WECOUNT:
+# monthly_natalityPost2020 <- monthly_natalityPost2020 %>%
+#   mutate(
+#     Status = ifelse(State == "Missouri", "total_ban", Status),
+#     classification_3 = case_when(
+#       State == "Texas" & Time >= as.Date("2021-09-01") &  Time <= as.Date("2022-08-25") ~ "six_week",
+#       State == "Texas" & Time > as.Date("2022-08-25") ~ "total_ban",
+#       State == "Arizona" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-10-27")  ~ "fifteen_week",
+#       State == "Arizona" & Time > as.Date("2022-10-27") ~ "viability",
+#       State == "Florida" & Time >= as.Date("2022-07-01") & Time < as.Date("2024-05-01") ~ "fifteen_week",
+#       State == "Florida" & Time >= as.Date("2024-05-01") ~ "six_week",
+#       State == "Missouri" & Time >= as.Date("2022-06-24") & Time < as.Date("2024-12-23") ~ "total_ban",
+#       State == "Missouri" & Time >= as.Date("2024-12-23") ~ "viability",
+#       State == "North Carolina" & Time >= as.Date("2023-07-01") ~ "twelve_week",  # NC 12-week ban
+#       State == "North Carolina" & Time < as.Date("2023-07-01") & Time >= as.Date("2022-06-24") ~ "viability",  # NC 12-week ban
+#       State == "North Dakota" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-07-28")  ~ "viability",
+#       State == "North Dakota" & Time >= as.Date("2022-07-28") & Time < as.Date("2024-09-12") ~ "total_ban",  # ND total ban
+#       State == "North Dakota" & Time >= as.Date("2024-09-12") ~ "viability",
+#       State == "Ohio" & Time >= as.Date("2022-09-14") ~ "viability",
+#       State == "Ohio" & Time < as.Date("2022-09-14") & Time >= as.Date("2022-06-24") ~ "six_week",
+#       State == "South Carolina" & Time >= as.Date("2023-08-23") ~ "six_week",  # SC 6-week ban
+#       State == "South Carolina" & Time < as.Date("2023-08-23") & Time >= as.Date("2022-08-17") ~ "twenty_week",
+#       State == "South Carolina" & Time < as.Date("2022-08-17") & Time >= as.Date("2022-06-24") ~ "six_week",
+#       State == "Wisconsin" & Time >= as.Date("2022-06-24") & Time < as.Date("2023-08-18")  ~ "total_ban",
+#       State == "Wisconsin" & Time >= as.Date("2023-08-18")  ~ "viability",
+#       State == "Wyoming" & Time >= as.Date("2022-06-24") & Time < as.Date("2024-11-19") ~ "total_ban",
+#       State == "Wyoming" & Time >= as.Date("2024-11-19") ~ "viability",
+#       State == "Iowa" & Time >= as.Date("2022-06-24") & Time < as.Date("2024-07-29") ~ "viability",
+#       State == "Iowa" & Time >= as.Date("2024-07-29") ~ "six_week",
+#       State == "Georgia" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-11-23") ~ "twenty_two_week",
+#       State == "Georgia" & Time > as.Date("2022-11-23") ~ "six_week",
+#       State == "Nebraska" & Time > as.Date("2023-05-22") ~ "twelve_week",
+#       State == "Nebraska" & Time >= as.Date("2022-06-24") & Time < as.Date("2023-05-22") ~ "viability",
+#       State == "Idaho" & Time > as.Date("2022-08-25") ~ "total_ban",
+#       State == "Idaho" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-08-25") ~ "viability",
+#       State == "Indiana" & Time >= as.Date("2023-08-21") ~ "total_ban",
+#       State == "Indiana" & Time >= as.Date("2022-06-24") & Time < as.Date("2023-08-21") ~ "viability",
+#       State == "Tennessee" & Time >= as.Date("2022-08-25") ~ "total_ban",
+#       State == "Tennessee" & Time >= as.Date("2022-06-24") & Time <= as.Date("2022-08-25") ~ "viability",
+#       State == "West Virginia" & Time >= as.Date("2022-09-16") ~ "total_ban",
+#       State == "West Virginia" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-09-16") ~ "viability",
+#       State == "Oklahoma" & Time > as.Date("2022-05-25") ~ "total_ban",
+#       TRUE ~ classification_3  # Keep existing classification_3 for all other states
+#   )
+#   )
+```
+
+```{r region eda}
+# List of U.S. states by Census region
+states_by_region <- list(
+  Northeast = c("Connecticut", "Maine", "Massachusetts", "New Hampshire", 
+                "New Jersey", "New York", "Pennsylvania", "Rhode Island", 
+                "Vermont"),
+  
+  Midwest = c("Illinois", "Indiana", "Iowa", "Kansas", "Michigan", "Minnesota", 
+              "Missouri", "Nebraska", "North Dakota", "Ohio", "South Dakota", 
+              "Wisconsin"),
+  
+  South = c("Delaware", "Florida", "Georgia", "Kentucky", "Louisiana", 
+            "Maryland", "Mississippi", "North Carolina", "Oklahoma", 
+            "South Carolina", "Tennessee", "Texas", "Virginia", "West Virginia", 
+            "Alabama", "Arkansas"),
+  
+  West = c("Alaska", "Arizona", "California", "Colorado", "Hawaii", "Idaho", 
+           "Montana", "Nevada", "New Mexico", "Oregon", "Utah", "Washington", 
+           "Wyoming")
+)
+
+monthly_natality$Region <- factor(
+  ifelse(monthly_natality$State %in% c("Connecticut", "Maine", "Massachusetts", "New Hampshire", 
+                                       "New Jersey", "New York", "Pennsylvania", "Rhode Island", 
+                                       "Vermont"), "Northeast",
+    ifelse(monthly_natality$State %in% c("Illinois", "Indiana", "Iowa", "Kansas", "Michigan", "Minnesota", 
+                                        "Missouri", "Nebraska", "North Dakota", "Ohio", "South Dakota", 
+                                        "Wisconsin"), "Midwest",
+      ifelse(monthly_natality$State %in% c("Delaware", "Florida", "Georgia", "Kentucky", "Louisiana", 
+                                          "Maryland", "Mississippi", "North Carolina", "Oklahoma", 
+                                          "South Carolina", "Tennessee", "Texas", "Virginia", 
+                                          "West Virginia", "Alabama", "Arkansas"), "South", "West"))))
+
+# Plot the data
+average_by_region <- monthly_natality %>%
+  group_by(Region, Time) %>%
+  summarise(Average_Births = mean(Births, na.rm = TRUE), .groups = 'drop')
+
+# Plot the average data by region
+ggplot(average_by_region, aes(x = Time, y = Average_Births, color = Region, group = Region)) + 
+  geom_line() +
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "Average Monthly Births by Region",
+       x = "Month",
+       y = "Average Births") +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 8),     # Smaller legend text
+    legend.title = element_text(size = 9),    # Smaller legend title
+    legend.key.size = unit(0.4, "cm"),        # Smaller legend keys
+    legend.spacing.y = unit(0.2, "cm"),
+    axis.text.x = element_text(angle = 45, hjust = 1)         # Rotate x-axis labels for readability
+  ) +
+  scale_y_continuous(labels = scales::comma_format()) +   
+  guides(color = guide_legend(ncol = 1))  +
+  scale_x_date(labels = scales::date_format("%Y"), 
+               breaks = "12 month") +  
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+
+average_by_region_rate <- monthly_natality %>%
+  group_by(Region, Time) %>%
+  summarise(Average_Births_rate = mean(birth_rate, na.rm = TRUE), .groups = 'drop')
+
+# Plot the average data by region
+ggplot(average_by_region_rate, aes(x = Time, y = Average_Births_rate, color = Region, group = Region)) + 
+  geom_line() +
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "Average Monthly Birth Rate by Region",
+       x = "Month",
+       y = "Average Birth Rate") +
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 8),     # Smaller legend text
+    legend.title = element_text(size = 9),    # Smaller legend title
+    legend.key.size = unit(0.4, "cm"),        # Smaller legend keys
+    legend.spacing.y = unit(0.2, "cm"),
+    axis.text.x = element_text(angle = 45, hjust = 1)         # Rotate x-axis labels for readability
+  ) +
+  scale_y_continuous(labels = scales::comma_format()) +   
+  guides(color = guide_legend(ncol = 1))  +
+  scale_x_date(labels = scales::date_format("%Y"), 
+               breaks = "12 month") +  
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 10))
+
+```
+
+
+```{r classification EDA}
+monthly_natality2223 <- monthly_natalityPost2020 %>% 
+    filter(Year == 2022 | Year == 2023) 
+
+# Classification 5 graph
+average_birth_5 <- monthly_natality2223 %>%
+  group_by(Time, classification_5) %>%
+  summarise(
+    avg_birth_rate = mean(birth_rate, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+ggplot(average_birth_5, aes(x = Time, y = avg_birth_rate, color = classification_5)) +
+  geom_line(size = 0.5) +
+  geom_point(size = 1) +  # Point size set to 2
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "Average Birth Rates Ban vs Spillover vs Control",
+       x = "Time",
+       y = "Average Birth Rate (per 1000 Reproductive Age Women)",
+       color = "State Group") +
+    theme_minimal() +
+     scale_x_date(labels = scales::date_format("%b %Y"), 
+                 breaks = "2 month") +  
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +  # Add more ticks to y-axis with pretty breaks
+  theme(
+    legend.text = element_text(size = 8),              
+    legend.title = element_text(size = 10),            
+    legend.key.size = unit(0.5, "cm"),
+    axis.title.y = element_text(size = 8), 
+    legend.spacing.y = unit(0.3, "cm"),
+    plot.title = element_text(hjust = 0.5, size = 15)  # Center the plot title
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_color_manual(values = c("salmon","skyblue", "chartreuse1"), labels = c("spillover_guttmacher" = "Spillover", 
+               "control5" = "Control", 
+               "bans" = "Bans"))
+
+# Classification 3 graph
+average_birth_3 <- monthly_natalityPost2020 %>%
+  group_by(Time, classification_3) %>%
+  summarise(
+    avg_birth_rate = mean(birth_rate, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+# Plot the averages
+ggplot(average_birth_3, aes(x = Time, y = avg_birth_rate, color = classification_3)) +
+    # geom_rect(aes(xmin = as.Date("2022-11-25"), xmax = max(Time), ymin = -Inf, ymax = Inf),
+    #         fill = "grey90", alpha = 0.05, color = NA) +  # Lighter alpha and no border
+  geom_line(size = 0.5) +
+  geom_point(size = 1) +  # Point size set to 2
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  geom_vline(xintercept = as.Date("2022-12-24"), color = "red", linetype = "dashed", size = 0.5) +
+  labs(title = "Average Birth Rate by Gestational Limit Bans",
+       x = "Time",
+       y = "Average Birth Rate (per 1000 Reproductive Age Women)",
+       color = "State Policy") +
+    theme_minimal() +
+     scale_x_date(labels = scales::date_format("%b %Y"), 
+                 breaks = "4 month") +  
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +  # Add more ticks to y-axis with pretty breaks
+  theme(
+    legend.text = element_text(size = 8),              
+    legend.title = element_text(size = 10),            
+    legend.key.size = unit(0.5, "cm"),
+    axis.title.y = element_text(size = 8), 
+    legend.spacing.y = unit(0.3, "cm"),
+    plot.title = element_text(hjust = 0.5, size = 15))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) #+ 
+  # #scale_color_manual(values = lighter_colors, labels = c("spillover_guttmacher" = "Spillover", 
+  #              "control5" = "Control", 
+  #              "bans" = "Bans"))
+```
+
+```{r Births SDID}
+colSums(is.na(monthly_natality2223))
+missing_rows <- monthly_natality2223[apply(is.na(monthly_natality2223), 1, any), ]
+print(missing_rows)
+      
+#setup the data for synthdid package
+setup <- panel.matrices(monthly_natality2223, 
+                        unit = "State", 
+                        time = "Time", 
+                        outcome = "birth_rate", 
+                        treatment = "Treated")
+
+tau.hat = synthdid_estimate(setup$Y, setup$N0, setup$T0)
+
+se = sqrt(vcov(tau.hat, method='bootstrap'))
+sprintf('point estimate: %1.2f', tau.hat)
+sprintf('95%% CI (%1.4f, %1.4f)', tau.hat - 1.96 * se, tau.hat + 1.96 * se)
+
+tau.sc   = sc_estimate(setup$Y, setup$N0, setup$T0)
+tau.did  = did_estimate(setup$Y, setup$N0, setup$T0)
+estimates = list(tau.did, tau.sc, tau.hat)
+names(estimates) = c('Diff-in-Diff', 'Synthetic Control', 'Synthetic Diff-in-Diff')
+
+print(unlist(estimates))
+
+synthdid_plot(tau.hat, se.method='bootstrap')
+synthdid_units_plot(tau.hat, se.method='bootstrap')
+```
+
+
+```{r Births Mixed Effects}
+average_birth_3collapsed <- monthly_natalityPost2124 %>%
+  group_by(Time, collapsed3) %>%
+  summarise(
+    avg_birth_rate = mean(birth_rate, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Plot the averages
+ggplot(average_birth_3collapsed, aes(x = Time, y = avg_birth_rate, color = collapsed3)) +
+  geom_line(size = 0.5) +
+  geom_point(size = 1) +  # Point size set to 2
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "Average Birth Rate by Classification 3",
+       x = "Date",
+       y = "Average Birth Rate") +
+  theme_minimal() 
+
+unique(monthly_natalityPost2223$collapsed3)
+
+monthly_natalityPost2124 <- monthly_natalityPost2020 %>% 
+  filter(Year >= 2021 & Year <= 2024) %>% 
+    mutate(collapsed3 = ifelse(Status == "legal" | Status == "legal ", "legal", as.character(collapsed3))) %>% 
+  filter(State != "Iowa") %>% 
+  mutate(collapsed3 = ifelse(State == "Missouri", "total_ban", as.character(collapsed3)), 
+    collapsed3 = factor(collapsed3, levels = c("legal", "between_6_20_weeks", "six_week", "total_ban"))) %>% 
+  mutate(BirthEffectI = (ifelse(Time >= BirthEffectDate, 1, 0))) 
+
+monthly_natalityPost2223 <- monthly_natalityPost2124 %>% 
+  filter(Year >= 2022 & Year <= 2023) %>% 
+  mutate(collapsed3 = case_when(
+    State == "Indiana" ~ "legal", 
+    State == "North Carolina" ~ "legal", 
+    TRUE ~ as.character(collapsed3)
+  )) %>% 
+  mutate(collapsed3 = factor(collapsed3, levels = c("legal", "between_6_20_weeks", "six_week", "total_ban")))
+
+monthly_natalityPost2223$Month_code <- as.factor(monthly_natalityPost2223$Month_code)
+monthly_natalityPost2223$Time <- as.numeric(monthly_natalityPost2223$Time)
+
+#2023 with month code
+
+Bmodel3m <- lmer(birth_rate ~ (1 | State) + scale(Time) + (1 | Month_code) + collapsed3*BirthEffectI, data = monthly_natalityPost2223)
+summary(Bmodel3m)
+re(Bmodel3m)
+
+plot(Bmodel3m, which = 1)  
+qqnorm(residuals(Bmodel3m)) 
+qqline(residuals(Bmodel3m), col = "red") 
+ranef_plot <- ranef(Bmodel3m)
+random_effects <- ranef_plot[[1]] 
+random_effects_values <- as.numeric(random_effects[, 1]) 
+dotchart(random_effects_values, main = "Births Random Effects (2023 MC)")
+
+
+#2023 without month code 
+Bmodel3 <- lmer(birth_rate ~ (1 | State) + scale(Time) + collapsed3*BirthEffectI, data = monthly_natalityPost2223)
+summary(Bmodel3)
+
+plot(Bmodel3, which = 1)  
+qqnorm(residuals(Bmodel3)) 
+qqline(residuals(Bmodel3), col = "red") 
+ranef_plot <- ranef(Bmodel3)
+random_effects <- ranef_plot[[1]] 
+random_effects_values <- as.numeric(random_effects[, 1]) 
+dotchart(random_effects_values, main = "Births Random Effects (2023)")
+
+#2024 with month code more years 
+Bmodel3my <- lmer(birth_rate ~ (1 | State) + scale(Time) + (1 | Month_code) + collapsed3*BirthEffectI, data = monthly_natalityPost2124)
+summary(Bmodel3my)
+
+plot(Bmodel3my, which = 1)  
+qqnorm(residuals(Bmodel3my)) 
+qqline(residuals(Bmodel3my), col = "red") 
+ranef_plot <- ranef(Bmodel3my)
+random_effects <- ranef_plot[[1]] 
+random_effects_values <- as.numeric(random_effects[, 1]) 
+dotchart(random_effects_values, main = "Birth Random Effects (2024 MC)")
+
+#without month code more years 
+Bmodel3y <- lmer(birth_rate ~ (1 | State) + scale(Time) + collapsed3*BirthEffectI, data = monthly_natalityPost2124)
+
+summary(Bmodel3y)
+vif(Bmodel3)
+
+plot(Bmodel3y, which = 1)  
+qqnorm(residuals(Bmodel3y)) 
+qqline(residuals(Bmodel3y), col = "red") 
+ranef_plot <- ranef(Bmodel3y)
+random_effects <- ranef_plot[[1]] 
+random_effects_values <- as.numeric(random_effects[, 1]) 
+dotchart(random_effects_values, main = "Births Random Effects (2024)")
+
+
+re <- function(data){
+estimates <- summary(data)$coef[, "Estimate"]
+estimates_df <- data.frame(Variable = names(estimates), Estimate = estimates)
+estimates_df <- estimates_df[nrow(estimates_df):1, ]
+
+lower <- confint(data)[,"2.5 %"]
+upper <- confint(data)[,"97.5 %"]
+lower_df <- data.frame(Variable = names(lower), lower = lower)
+upper_df <- data.frame(Variable = names(upper), upper = upper)
+lower_df <- lower_df[nrow(lower_df):1, ]
+upper_df <- upper_df[nrow(upper_df):1, ]
+
+merge <- left_join(estimates_df, lower_df)
+merge <- left_join(merge, upper_df)
+
+  return(list(merge = merge))
+}
+
+re(Bmodel3m)
+re(Bmodel3)
+re(Bmodel3my)
+re(Bmodel3y)
+
+confint(Bmodel3)
+
+monthly_natalityPost2124 <- monthly_natalityPost2124 %>% 
+  mutate(simpleban = ifelse(collapsed3 == "legal" , "legal", "ban")) %>% 
+  mutate(simpleban = factor(simpleban, levels = c("legal", "ban")))
+
+Bmodelsimp <- lmer(birth_rate ~ (1 | State) + scale(Time) + simpleban*BirthEffectI, data = monthly_natalityPost2124)
+
+summary(Bmodelsimp)
+re(Bmodelsimp)
+
+monthly_natalityPost2124$Month_code <- as.factor(monthly_natalityPost2124$Month_code)
+monthly_natalityPost2124$Time <- as.numeric(monthly_natalityPost2124$Month_code)
+
+Bmodelsimpm <- lmer(birth_rate ~ (1 | State) + scale(Time) + simpleban*BirthEffectI + (1|Month_code), data = monthly_natalityPost2124)
+summary(Bmodelsimpm)
+
+re(Bmodelsimpm)
+```
+
+```{r}
+average_birth_simple <- monthly_natalityPost2124 %>%
+  group_by(Time, simpleban) %>%
+  summarise(
+    avg_birth_rate = mean(birth_rate, na.rm = TRUE),
+    se_birth_rate = sd(birth_rate, na.rm = TRUE) / sqrt(n()),  # Standard Error
+    ci_lower = avg_birth_rate - 1.96 * se_birth_rate,  # Lower 95% CI
+    ci_upper = avg_birth_rate + 1.96 * se_birth_rate   # Upper 95% CI
+  ) %>%
+  ungroup()
+
+
+ggplot(average_birth_simple, aes(x = Time, y = avg_birth_rate, color = simpleban, fill = simpleban)) +
+ # Add shaded region first, so grid lines remain on top of it
+  # geom_rect(aes(xmin = as.Date("2022-11-25"), xmax = max(Time), ymin = -Inf, ymax = Inf),
+  #           fill = "grey90", alpha = 0.05, color = NA) +  # Lighter alpha and no border
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.3, size = 0.1) + 
+  geom_line(size = 0.5) +
+  geom_point(size = 1) +  # Point size set to 2
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  geom_vline(xintercept = as.Date("2022-12-24"), color = "red", linetype = "dashed", size = 0.5) +
+ # Add shaded region after 2022-11-25
+  labs(title = "Average Birth Rates Ban vs Legal States",
+       x = "Time",
+       y = "Average Birth Rate (per 1000 Reproductive Age Women)",
+       color = "State Group",
+       fill = "95% CI") +
+    theme_minimal() +
+     scale_x_date(labels = scales::date_format("%b %Y"), 
+                 breaks = "2 month") +  
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +  
+  theme(
+    legend.text = element_text(size = 8),              
+    legend.title = element_text(size = 10),            
+    legend.key.size = unit(0.5, "cm"),
+    axis.title.y = element_text(size = 8), 
+    legend.spacing.y = unit(0.3, "cm"),
+    plot.title = element_text(hjust = 0.5, size = 15)
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+```{r}
+total_ban_states_births23 <- unique((monthly_natalityPost2223$State[monthly_natalityPost2223$collapsed3 == "total_ban"]))
+total_ban_states_births <- unique((monthly_natalityPost2124$State[monthly_natalityPost2124$collapsed3 == "total_ban"]))
+setdiff(total_ban_states_births, total_ban_states_births23)
+
+six_week_states <- unique((monthly_natalityPost2124$State[monthly_natalityPost2124$collapsed3 == "six_week"]))
+six_week_states_23 <- unique((monthly_natalityPost2223$State[monthly_natalityPost2223$collapsed3 == "six_week"]))
+
+six_twenty_states<- unique((monthly_natalityPost2124$State[monthly_natalityPost2124$collapsed3 == "between_6_20_weeks"]))
+six_twenty_states_23 <- unique((monthly_natalityPost2223$State[monthly_natalityPost2223$collapsed3 == "between_6_20_weeks"]))
+six_twenty_states_23
+six_twenty_states
+legal_states <- unique((monthly_natalityPost2124$State[monthly_natalityPost2124$collapsed3 == "legal"]))
+monthly_natalityPost2124
+ban_states <- unique((monthly_natalityPost2124$State[monthly_natalityPost2124$simpleban == "ban"]))
+
+length(ban_states)
+length(total_ban_states_births)
+length(six_twenty_states)
+length(legal_states)
+length(six_week_states)
+
+tp24 <- sum(bigpop_2023$repf[bigpop_2023$State %in% total_ban_states_births])
+stp24 <- sum(bigpop_2023$repf[bigpop_2023$State %in% six_twenty_states])
+lp <- sum(bigpop_2023$repf[bigpop_2023$State %in% legal_states])
+
+tp <- sum(bigpop_2023$repf[bigpop_2023$State %in% total_ban_states_births23])
+stp <- sum(bigpop_2023$repf[bigpop_2023$State %in% six_twenty_states_23])
+
+sp <- sum(bigpop_2023$repf[bigpop_2023$State %in% six_week_states])
+sp23 <- sum(bigpop_2023$repf[bigpop_2023$State %in% six_week_states_23])
+sp
+sp23
+
+setdiff(six_twenty_states, six_twenty_states_23)
+stp
+stp24
+
+bp <- sum(bigpop_2023$repf[bigpop_2023$State %in% ban_states])
+bp
+tp24
+tp
+sp
+
+birthresults <- read.xlsx("data/birthresults.xlsx")
+
+birthresults <- birthresults %>% 
+  mutate(repf = case_when(
+    policy == "Total Bans" ~ tp,  
+    policy == "Six Week" ~ sp, 
+    policy == "6-20 Weeks" ~ stp, 
+    policy == "Legal At or After Viability" ~ lp,
+    policy == "Ban" ~ bp, 
+    policy == "Ban" ~ bp, 
+    TRUE ~ NA_real_  # Default case to handle any other combinations
+  ))
+
+birthresults <- birthresults %>% 
+  mutate(repf = case_when(
+    model == "Birth Rates  2021-2024 Total Bans" ~ tp24, 
+    model == "Birth Rates (Controlling for Month), 2021-2024 Total Bans" ~ tp24, 
+    model == "Birth Rates  2021-2024 6-20 Weeks" ~ stp24,
+    model == "Birth Rates (Controlling for Month), 2021-2024 6-20 Weeks" ~ stp24,
+    TRUE ~ repf  # Default case to handle any other combinations
+  ))
+
+
+birthresults <- birthresults %>% 
+  mutate(
+    birth_change_aggregate_rate_annual = results * 12,
+    rateaggregate_lo_CI = lower_ci * 12, 
+    rateaggregate_up_CI = upper_ci * 12,
+    birth_change_aggregate_count_annual = (results/1000) * repf * 12,
+    aggregate_lo_CI = (lower_ci/1000) * repf * 12, 
+    aggregate_up_CI = (upper_ci/1000) * repf * 12
+  )
+
+birthresultssimp <- birthresults %>% 
+    mutate(Estimate_Rate_annual = paste(round(birth_change_aggregate_rate_annual, 4), " (", round(rateaggregate_lo_CI, 4), ", ", round(rateaggregate_up_CI, 4), ")", sep = "")) %>% 
+    mutate(Estimate_Rate  = paste(round(results, 4), " (", round(lower_ci, 4), ", ", round(upper_ci, 4), ")", sep = "")) %>% 
+    mutate(Estimate_Count = paste(round(birth_change_aggregate_count_annual, -2), " (", round(aggregate_lo_CI, -2), ", ", round(aggregate_up_CI, -2), ")", sep = ""))
+
+```
+
+
+
+
+

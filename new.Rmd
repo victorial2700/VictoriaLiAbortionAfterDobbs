@@ -1,0 +1,1750 @@
+---
+title: "thesisAbortion"
+output: html_document
+date: "2025-02-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(synthdid)
+library(data.table)
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(zoo)
+library(openxlsx)
+library(lme4)
+library(pheatmap)
+library(circlize)
+library(gridExtra)
+library(patchwork)
+library(forestplot)
+library(RColorBrewer)
+library(scales)
+library(table1)
+library(knitr)
+```
+
+```{r Classifying States 2: Center for Reproductive Rights}
+expanded_access <- c("Washington", "Oregon", "California", "Minnesota", "Illinois","New York", "Hawaii", "Maryland", "New Jersey", "Connecticut", "Vermont")
+
+protected <- c("Alaska", "Nevada","Arizona", "Montana", "Colorado", "Kansas", "Missouri", "Michigan", "Ohio", "Maine", "Delaware", "Rhode Island", "Massachusetts", "District of Columbia")
+ 
+not_protected <- c("New Mexico", "Virginia", "New Hampshire")
+
+hostile <- c("Utah", "Wyoming", "North Dakota", "Nebraska", "Iowa", "Wisconsin", "Pennsylvania", "North Carolina", "South Carolina", "Georgia", "Florida")
+
+illegal <- c("Idaho", "South Dakota", "Texas", "Oklahoma", "Arkansas", "Louisiana", "Mississippi","Alabama", "Tennessee", "Kentucky","West Virginia", "Indiana")
+
+length(expanded_access) + length(protected) + length(not_protected) + length(hostile) + length(illegal)
+```
+
+```{r Classifying States 3: Ban Time}
+total_ban <- c("Idaho", "South Dakota", "Texas", "Oklahoma", "Arkansas", "Louisiana", "Mississippi","Alabama", "Tennessee", "Kentucky","West Virginia", "Indiana")
+
+six_week <- c("Florida",  "Georgia", "South Carolina")
+
+twelve_week <- c("Nebraska", "North Carolina")
+  
+eighteen_week <- c("Utah")
+
+twenty_two_week <- c("Kansas", "Ohio", "Wisconsin")
+
+twenty_four_week <- c("New Hampshire", "Pennsylvania")
+  
+viability <- c("Montana", "Wyoming", "Arizona", "California", "Connecticut", "Delaware", "Hawaii", "Illinois", "Maine", "Massachusetts", "Missouri", "Nevada", "New York", "North Dakota", "Rhode Island", "Virginia", "Washington", "Iowa")
+
+no_limit <- c("Alaska", "Colorado", "Maryland", "Michigan", "Minnesota", "New Jersey", "New Mexico", "Oregon", "Vermont", "District of Columbia")
+
+length(total_ban) + length(six_week) + length(twelve_week) + length(eighteen_week) + length(twenty_two_week) + length (twenty_four_week) + length(viability) + length(no_limit)
+
+
+# Define the values for each classification as string vectors
+classification_1 <- c("june_trigger", "other_banned", "spillover_geography", "control")
+classification_2 <- c("expanded_access", "protected", "not_protected", "hostile", "illegal")
+classification_3 <- c("total_ban", "six_week", "twelve_week", "eighteen_week", "twenty_two_week", "twenty_four_week", "viability", "no_limit")
+```
+
+```{r classification 4: friendly not friendly}
+not_friendly <- c(total_ban, six_week, twelve_week, eighteen_week)
+length(not_friendly)
+
+friendly <-c(twenty_two_week, twenty_four_week, viability, no_limit)
+```
+
+```{r classification 5: spillover guttmacher}
+control5 <- c("Alaska", "Connecticut", "District of Columbia", "Delaware", "Rhode Island","Vermont", "Maryland", "Hawaii", "Massachusetts", "New Hampshire", "New Jersey", "Maine")
+
+bans <- c(not_friendly)
+
+spillover_guttmacher <- setdiff(setdiff(States, control5), bans)
+
+sum(length(bans) + length(control5) + length(spillover_guttmacher))
+```
+
+```{r classifying}
+classify <- data.frame(
+  State = States
+)
+
+classify <- classify %>%
+  mutate(
+    classification_1 = case_when(
+      State %in% june_trigger ~ "june_trigger",
+      State %in% other_banned ~ "other_banned",
+      State %in% spillover_geography ~ "spillover_geography",
+      State %in% control ~ "control",
+      TRUE ~ "other"  
+    ),
+    classification_2 = case_when(
+      State %in% expanded_access ~ "expanded_access",
+      State %in% protected ~ "protected",
+      State %in% not_protected ~ "not_protected",
+      State %in% hostile ~ "hostile",
+      State %in% illegal ~ "illegal",
+      TRUE ~ "other"  
+    ),
+    classification_3 = case_when(
+      State %in% total_ban ~ "total_ban",           
+      State %in% six_week ~ "six_week",             
+      State %in% twelve_week ~ "twelve_week",     
+      State %in% eighteen_week ~ "eighteen_week",   
+      State %in% twenty_two_week ~ "twenty_two_week", 
+      State %in% twenty_four_week ~ "twenty_four_week", 
+      State %in% viability ~ "viability",       
+      State %in% no_limit ~ "no_limit",             
+      TRUE ~ "other"  
+    ), 
+    classification_4 = case_when(
+      State %in% friendly ~ "friendly",            
+      State %in% not_friendly ~ "not_friendly",
+      TRUE ~ "other"  
+    ),
+    classification_5 = case_when(
+      State %in% control5 ~ "control5",           
+      State %in% bans ~ "bans",     
+      State %in% spillover_guttmacher ~ "spillover_guttmacher",     
+      TRUE ~ "other"  
+    )
+  )
+
+#sanity check
+other_counts <- classify %>%
+  summarize(
+    other_in_classification_1 = sum(classification_1 == "other"),
+    other_in_classification_2 = sum(classification_2 == "other"),
+    other_in_classification_3 = sum(classification_3 == "other"),
+    other_in_classification_4 = sum(classification_4 == "other"),
+    other_in_classification_5 = sum(classification_5 == "other")
+  )
+
+print(other_counts) 
+```
+
+```{r fertile women population}
+state_names <- c(
+  "AL" = "Alabama", "AK" = "Alaska", "AZ" = "Arizona", "AR" = "Arkansas",
+  "CA" = "California", "CO" = "Colorado", "CT" = "Connecticut", "DE" = "Delaware",
+  "DC" = "District of Columbia", "FL" = "Florida", "GA" = "Georgia", "HI" = "Hawaii",
+  "ID" = "Idaho", "IL" = "Illinois", "IN" = "Indiana", "IA" = "Iowa",
+  "KS" = "Kansas", "KY" = "Kentucky", "LA" = "Louisiana", "ME" = "Maine",
+  "MD" = "Maryland", "MA" = "Massachusetts", "MI" = "Michigan", "MN" = "Minnesota",
+  "MS" = "Mississippi", "MO" = "Missouri", "MT" = "Montana", "NE" = "Nebraska",
+  "NV" = "Nevada", "NH" = "New Hampshire", "NJ" = "New Jersey", "NM" = "New Mexico",
+  "NY" = "New York", "NC" = "North Carolina", "ND" = "North Dakota", "OH" = "Ohio",
+  "OK" = "Oklahoma", "OR" = "Oregon", "PA" = "Pennsylvania", "RI" = "Rhode Island",
+  "SC" = "South Carolina", "SD" = "South Dakota", "TN" = "Tennessee", "TX" = "Texas",
+  "UT" = "Utah", "VT" = "Vermont", "VA" = "Virginia", "WA" = "Washington",
+  "WV" = "West Virginia", "WI" = "Wisconsin", "WY" = "Wyoming"
+)
+
+big <- read.csv("data/NationalAndStatePregnancy_PublicUse.csv")
+
+pop <- big %>% 
+  select(state, year, population1544) %>% 
+  rename(State = state, Year = year, repf_population = population1544)
+
+# Convert state_names to a tibble for joining
+state_lookup <- tibble(State = names(state_names), State_Full = state_names)
+
+# Perform a left join to replace state abbreviations with full names
+pop <- pop %>%
+  left_join(state_lookup, by = "State") %>%
+  select(-State) %>%
+  rename(State = State_Full)
+
+womenpopdata <- read.csv("data/age by sex sc-est2023-agesex-civ-All.csv")
+reprowomenpopdata <- womenpopdata %>%
+  filter(SEX == 2, AGE >= 15, AGE <= 44, NAME != "United States")
+
+repdata2020 <- reprowomenpopdata %>%
+  group_by(NAME) %>%
+  summarise(repf_population = sum(POPEST2020_CIV, na.rm = TRUE)) %>% 
+  rename(State = NAME ) %>% 
+  mutate (Year = as.numeric(2020))
+
+repdata2021 <- reprowomenpopdata %>%
+  group_by(NAME) %>%
+  summarise(repf_population = sum(POPEST2021_CIV, na.rm = TRUE)) %>% 
+  rename(State = NAME ) %>% 
+  mutate (Year = as.numeric(2021))
+
+repdata2022 <- reprowomenpopdata %>%
+  group_by(NAME) %>%
+  summarise(repf_population = sum(POPEST2022_CIV, na.rm = TRUE)) %>% 
+  rename(State = NAME ) %>% 
+  mutate (Year = as.numeric(2022))
+
+repdata2023 <- reprowomenpopdata %>%
+  group_by(NAME) %>%
+  summarise(repf_population = sum(POPEST2023_CIV, na.rm = TRUE)) %>% rename(State = NAME ) %>% 
+  mutate (Year = as.numeric(2023))
+
+# Step 1: Filter pop for year 2020
+pop_2020 <- pop %>%
+  filter(Year == 2020)
+
+# Step 2: Merge pop_2020 and repdata2020 by state and year to get both repf_population
+merged_data <- pop_2020 %>%
+  left_join(repdata2020, by = c("State", "Year"), suffix = c("_pop", "_repdata2020"))
+
+pop2019 <- pop %>%
+  filter(!Year == 2020)
+
+bigpop <- rbind(pop2019, repdata2020, repdata2021, repdata2022, repdata2023)
+
+# Step 1: Calculate annual growth rates (2017-2023)
+population_data <- bigpop %>%
+  group_by(State) %>%
+  arrange(Year) %>%
+  mutate(Growth_Rate = (repf_population - lag(repf_population)) / lag(repf_population)) %>%
+  filter(!is.na(Growth_Rate))  # Remove the first row (NA for growth rate)
+
+# Step 2: Calculate the average growth rate for each state (2017-2023)
+average_growth_rate <- population_data %>%
+  group_by(State) %>%
+  summarise(Avg_Growth_Rate = mean(Growth_Rate, na.rm = TRUE))
+
+# Step 3: Project population for 2024
+# Get the population of 2023 to project
+repf_2024 <- population_data %>%
+  filter(Year == 2023) %>%
+  left_join(average_growth_rate, by = "State") %>%
+  mutate(Projected_Population_2024 = round(repf_population * (1 + Avg_Growth_Rate), digits = -1))
+
+
+repf_2024 <- repf_2024 %>% 
+  select(State, Projected_Population_2024) %>% 
+  mutate(Year = 2024) %>% 
+  rename(repf_population = Projected_Population_2024)
+  
+bigpop <- rbind(bigpop, repf_2024)
+
+bigpop2020_24 <- bigpop %>%
+  filter(Year >= "2020") %>% 
+  pivot_wider(names_from = Year, values_from = repf_population) %>% 
+  rowwise() %>% 
+  mutate(
+    change2021 = ((`2021` - `2020`) / `2020`) + 1, 
+    change2122 = ((`2022` - `2021`) / `2021`) + 1, 
+    change2223 = ((`2023` - `2022`) / `2022`) + 1, 
+    change2324 = ((`2024` - `2023`) / `2023`) + 1
+  )
+
+bigpop <- bigpop %>% 
+  filter(!Year == "2020")
+  
+bigpop1 <- rbind(bigpop, pop_2020)
+  
+bigpop1 <- left_join(bigpop1, bigpop2020_24)
+
+bigpop1 <- bigpop1 %>%
+  mutate(
+    repf_population = case_when(
+      Year == 2021 ~ `2020` * change2021,
+      Year == 2022 ~ `2021` * change2122,
+      Year == 2023 ~ `2022` * change2223,
+      Year == 2024 ~ `2023` * change2324,
+      TRUE ~ repf_population  
+    )
+  )
+
+bigpop <- bigpop1 %>% 
+  select(State, Year, repf_population)
+
+bigpop <- bigpop %>%
+  bind_rows(
+    bigpop %>%
+      filter(Year %in% c(2020, 2022, 2023, 2024)) %>%
+      group_by(Year) %>%
+      summarise(State = "US", repf_population = sum(repf_population)) %>%
+      ungroup()
+  )
+```
+
+```{r wrangling WeCount}
+dataWecount <- read.csv("data/WeCount Basic.csv") 
+
+dataWecount <- dataWecount %>% 
+    rename(Time = Month)  # Extract the year from 'Month' column
+
+dataWecount$Time <- as.Date(dataWecount$Time, format = "%m/%d/%Y") 
+
+dataWecount <- dataWecount %>% 
+    mutate(Year = year(Time))  # Extract the year from 'Month' column
+
+bigpop2224 <- bigpop %>% 
+  filter(Year == 2022 | Year == 2023 | Year == 2024)
+
+dataWecountRate <- dataWecount %>%
+  left_join(bigpop2224, by = c("State", "Year")) %>%
+  mutate(abortion_rate = Abortions / repf_population * 1000)
+
+dataWecountRate <- left_join(dataWecountRate, classify)
+
+dataWecountRate <- dataWecountRate %>% 
+  mutate(DobbsInEffect = ifelse(Time > as.Date("2022-06-24"), 1, 0)) 
+
+dataWecountRate <- dataWecountRate %>% 
+  mutate(BanInEffect = ifelse(classification_5 == "bans", 1, 0))
+
+dataWecountRate$Time <- as.Date(dataWecountRate$Time, format = "%Y-%m-%d")
+```
+
+```{r right times}
+laws <- read.csv("data/laws.csv")
+
+laws <- laws %>% 
+  select(State, Status, Effective.Date, End.Date) %>% 
+  rename(effective_date = "Effective.Date") %>% 
+  rename(end_date = "End.Date")
+
+laws$effective_date <- as.Date(laws$effective_date)
+laws$end_date <- as.Date(laws$end_date)
+                            
+colnames(laws)
+
+flip_laws <- laws %>% 
+  mutate(Status = case_when(State == "Florida" ~ "delayed_ban", State == "North Carolina" ~ "delayed_ban", State == "South Carolina" ~ "flip_flop", TRUE ~ Status)) %>%
+  filter(laws$Status != "legal " & laws$Status != "legal" & laws$Status != "total_ban")
+
+dataWecountRateCorrect <- left_join(dataWecountRate, flip_laws)
+
+dataWecountRateCorrect <- dataWecountRateCorrect %>%  
+  mutate(classification_3 = ifelse(Time <= as.Date("2022-06-24"), "preDobbs", classification_3))
+      
+#correcting the ban categories FOR WECOUNT: 
+dataWecountRateCorrect <- dataWecountRateCorrect %>%  
+  mutate(
+    Status = ifelse(State == "Missouri", "total_ban", Status), 
+    classification_3 = case_when(
+      State == "Texas" & Time >= as.Date("2021-09-01") &  Time <= as.Date("2022-08-25") ~ "six_week",
+      State == "Texas" & Time > as.Date("2022-08-25") ~ "total_ban",
+      State == "Arizona" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-10-27")  ~ "fifteen_week", 
+      State == "Arizona" & Time > as.Date("2022-10-27") ~ "viability",  
+      State == "Florida" & Time >= as.Date("2022-07-01") & Time < as.Date("2024-05-01") ~ "fifteen_week",
+      State == "Florida" & Time >= as.Date("2024-05-01") ~ "six_week",  
+      State == "Missouri" & Time >= as.Date("2022-06-24") & Time < as.Date("2024-12-23") ~ "total_ban",
+      State == "Missouri" & Time >= as.Date("2024-12-23") ~ "viability",  
+      State == "North Carolina" & Time >= as.Date("2023-07-01") ~ "twelve_week",  # NC 12-week ban
+      State == "North Carolina" & Time < as.Date("2023-07-01") & Time >= as.Date("2022-06-24") ~ "viability",  # NC 12-week ban
+      State == "North Dakota" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-07-28")  ~ "viability", 
+      State == "North Dakota" & Time >= as.Date("2022-07-28") & Time < as.Date("2024-09-12") ~ "total_ban",  # ND total ban
+      State == "North Dakota" & Time >= as.Date("2024-09-12") ~ "viability",  
+      State == "Ohio" & Time >= as.Date("2022-09-14") ~ "viability",  
+      State == "Ohio" & Time < as.Date("2022-09-14") & Time >= as.Date("2022-06-24") ~ "six_week",  
+      State == "South Carolina" & Time >= as.Date("2023-08-23") ~ "six_week",  # SC 6-week ban
+      State == "South Carolina" & Time < as.Date("2023-08-23") & Time >= as.Date("2022-08-17") ~ "twenty_week",  
+      State == "South Carolina" & Time < as.Date("2022-08-17") & Time >= as.Date("2022-06-24") ~ "six_week",  
+      State == "Wisconsin" & Time >= as.Date("2022-06-24") & Time < as.Date("2023-08-18")  ~ "total_ban", 
+      State == "Wisconsin" & Time >= as.Date("2023-08-18")  ~ "viability",  
+      State == "Wyoming" & Time >= as.Date("2022-06-24") & Time < as.Date("2024-11-19") ~ "total_ban",  
+      State == "Wyoming" & Time >= as.Date("2024-11-19") ~ "viability",  
+      State == "Iowa" & Time >= as.Date("2022-06-24") & Time < as.Date("2024-07-29") ~ "viability", 
+      State == "Iowa" & Time >= as.Date("2024-07-29") ~ "six_week", 
+      State == "Georgia" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-11-23") ~ "twenty_two_week",  
+      State == "Georgia" & Time > as.Date("2022-11-23") ~ "six_week",  
+      State == "Nebraska" & Time > as.Date("2023-05-22") ~ "twelve_week",  
+      State == "Nebraska" & Time >= as.Date("2022-06-24") & Time < as.Date("2023-05-22") ~ "viability", 
+      State == "Idaho" & Time > as.Date("2022-08-25") ~ "total_ban",  
+      State == "Idaho" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-08-25") ~ "viability", 
+      State == "Indiana" & Time >= as.Date("2023-08-21") ~ "total_ban",  
+      State == "Indiana" & Time >= as.Date("2022-06-24") & Time < as.Date("2023-08-21") ~ "viability", 
+      State == "Tennessee" & Time >= as.Date("2022-08-25") ~ "total_ban",  
+      State == "Tennessee" & Time >= as.Date("2022-06-24") & Time <= as.Date("2022-08-25") ~ "viability", 
+      State == "West Virginia" & Time >= as.Date("2022-09-16") ~ "total_ban",  
+      State == "West Virginia" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-09-16") ~ "viability",       
+      State == "Oklahoma" & Time > as.Date("2022-05-25") ~ "total_ban",  
+      TRUE ~ classification_3  # Keep existing classification_3 for all other states
+  )
+  )
+
+unique(dataWecountRateCorrect$State[classification_3 == "total_ban" | classification_3 == "six_week" | classification_3 == "twelve_week" | classification_3 == "eighteen_week"])
+
+dataWecountRateCorrect <- dataWecountRateCorrect %>% 
+   mutate(BanInEffect = ifelse(classification_5 == "bans", 1,0))
+
+sum(dataWecountRateCorrect$classification_3 == "preDobbs")
+
+unique(dataWecountRate$classification_4)
+
+#FIXING CLASSIFICATION 6
+dataWecountRateCorrect <- dataWecountRateCorrect %>%  
+  mutate(flip_flop = case_when(
+    Status == "flip_flop" ~ 1,
+    TRUE ~ 0)) %>% 
+  mutate(classification_6 = ifelse(classification_3 == "total_ban" | classification_3 == "six_week" | classification_3 == "twelve_week" | classification_3 == "eighteen_week", "ban", "no_ban")) 
+```
+
+```{r WeCount Eda}
+selectstates <- c("California", "New York", "New Mexico", "Wisconsin",
+                  "South Carolina", "Texas", "District of Columbia", "Massachusetts", "Florida", 
+                  "Illinois", "Missouri", "Georgia", "Kansas", "Massachusetts")
+
+selected_states_data <- dataWecountRate %>%
+  filter(State %in% selectstates) %>% 
+  mutate(State = factor(State, levels = c("Massachusetts", "California", "New York", "New Mexico", "Wisconsin",
+                  "District of Columbia", "South Carolina", "Georgia", "Texas", "Florida", 
+                  "Illinois", "Missouri", "Kansas")))
+
+non_selected_states_data <- dataWecountRate %>%
+  filter(!State %in% selectstates)
+
+ggplot() +  
+    geom_line(data = non_selected_states_data, aes(x = Time, y = abortion_rate, group = State), color = "lightgray", size = 0.5) +
+  geom_line(data = selected_states_data, aes(x = Time, y = abortion_rate, color = State), size = 0.75) +
+    geom_point(data = selected_states_data, aes(x = Time, y = abortion_rate, color = State), size = 1) + 
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  
+  labs(title = "WeCount Abortion Rate by Select States", 
+       x = "Time",
+       y = "Abortion Rate (per 1000 Reproductive Age Women)") +
+  theme_minimal() +
+   scale_x_date(labels = scales::date_format("%b %Y"), 
+                 breaks = "4 month") +  # Add more frequent breaks on x-axis (every month)
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +  # Add more ticks to y-axis with pretty breaks
+  theme(
+    legend.text = element_text(size = 8),              
+    legend.title = element_text(size = 10),            
+    legend.key.size = unit(0.5, "cm"),                
+    legend.spacing.y = unit(0.3, "cm"),
+    plot.title = element_text(hjust = 0.5, size = 15)  # Center the plot title
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+
+```
+
+```{r functions}
+# Function to plot residuals vs. fitted values
+plot_r <- function(model) {
+  plot(model, which = 1)
+}
+
+# Function to create a QQ plot of residuals
+plot_q <- function(model) {
+  qqnorm(residuals(model))
+  qqline(residuals(model), col = "red")
+}
+
+plot_re<- function(model, name) {
+  ranef_plot <- ranef(model)
+  random_effects <- ranef_plot[[1]]
+  random_effects_values <- as.numeric(random_effects[, 1])
+  plot_title <- paste(name, " Random Effects")
+  dotchart(random_effects_values, main = plot_title)
+}
+
+
+# Initialize an empty global dataframe
+model_results_df <- data.frame(Model = character(),
+                               Variable = character(),
+                               Estimate = numeric(),
+                               Lower = numeric(),
+                               Upper = numeric(),
+                               stringsAsFactors = FALSE)
+
+add <- function(model, model_name) {
+  # Extract estimates
+  estimates <- summary(model)$coef[, "Estimate"]
+  estimates_df <- data.frame(Variable = names(estimates), Estimate = estimates)
+  
+  # Extract confidence intervals
+  conf_int <- confint(model)
+  lower <- conf_int[, "2.5 %"]
+  upper <- conf_int[, "97.5 %"]
+  
+  # Create dataframes for lower and upper bounds
+  lower_df <- data.frame(Variable = names(lower), Lower = lower)
+  upper_df <- data.frame(Variable = names(upper), Upper = upper)
+  
+  # Merge into a single dataframe
+  combined_df <- merge(estimates_df, lower_df, by = "Variable")
+  combined_df <- merge(combined_df, upper_df, by = "Variable")
+  
+  # Add model name
+  combined_df$Model <- model_name
+  
+  # Reorder columns
+  combined_df <- combined_df[, c("Model", "Variable", "Estimate", "Lower", "Upper")]
+  
+  # Append to global dataframe
+  assign("model_results_df", rbind(model_results_df, combined_df), envir = .GlobalEnv)
+}
+```
+
+
+
+```{r WeCount Correct MIXED EFFECTS}
+unique(dataWecountRateCorrect$classification_3)
+dataWecountRateCorrect <- dataWecountRateCorrect %>% 
+  mutate(
+    collapsed3 = ifelse(
+      classification_3 == "twelve_week" | 
+      classification_3 == "fifteen_week" | 
+      classification_3 == "eighteen_week" | 
+      classification_3 == "twenty_week", 
+      "between_7_20_weeks", 
+      ifelse(
+        classification_3 == "viability" | 
+        classification_3 == "twenty_four_week" | 
+        classification_3 == "twenty_week" | 
+        classification_3 == "twenty_two_week", 
+        "viability", 
+        as.character(classification_3)  # Keep the original value if neither condition is met
+      )
+    )
+  )
+unique(dataWecountRateCorrect$collapsed3)
+
+dataWC <- dataWecountRateCorrect %>% 
+    mutate(
+    classification_1 = factor(classification_1, levels = c("control", "spillover_geography", "other_banned", "june_trigger")),
+    classification_2 = factor(classification_2, levels = c("protected", "not_protected","expanded_access", "hostile", "illegal")),
+    classification_3 = factor(classification_3, levels =c("preDobbs", "no_limit", "viability", "twenty_four_week", "twenty_two_week","twenty_week", "eighteen_week", "fifteen_week", "twelve_week", "six_week", "total_ban")), 
+    collapsed3 = factor(collapsed3, levels =c("preDobbs", "no_limit", "viability", "between_7_20_weeks", "six_week", "total_ban")),    
+    classification_4 = factor(classification_4, levels =c("friendly", "not_friendly")), 
+    classification_5 = factor(classification_5, levels =c("control5", "bans", "spillover_guttmacher")), 
+    classification_6 = factor(classification_6, levels =c("no_ban", "ban"))
+      ) # Time column for dates after June 1, 2022
+
+states_with_some_bans <- unique(dataWecountRateCorrect$State[dataWecountRateCorrect$classification_6 == "ban"])
+
+dataWC$Time <- as.factor(dataWC$Time)
+```
+
+```{r Wecount Mixed Effects Right}
+model2 <- lmer(abortion_rate ~ DobbsInEffect*classification_2 + (1 | State) + (1 | Time), data = dataWC)
+
+summary(model2)
+confint(model2)
+
+model3 <- lmer(abortion_rate ~ (1 | State) + classification_3 + (1 | Time), data = dataWC)
+
+summary(model3)
+confint(model3)
+
+model3collapsed <- lmer(abortion_rate ~ (1 | State) + collapsed3 + (1 | Time) , data = dataWC)
+
+summary(model3collapsed)
+confint(model3collapsed)
+
+
+model4 <- lmer(abortion_rate ~ (1 | State) + (1 | Time) + DobbsInEffect*classification_4, data = dataWC)
+
+summary(model4)
+confint(model4)
+
+#throw out flipflop
+flipflop <- unique(dataWecountRateCorrect$State[dataWecountRateCorrect$Status == "flip_flop"])
+
+
+dataWecount5 <- dataWC %>% 
+  filter(!State %in% flipflop) %>% 
+  mutate(
+    Time = as.Date(Time), 
+    classification_5 = case_when(
+      Time <= as.Date("2022-06-24") ~ "preDobbs",  # Apply preDobbs first
+      classification_5 != "control5" & classification_6 == "no_ban" ~ "spillover_guttmacher",
+      TRUE ~ as.character(classification_5)  
+    ))
+
+dataWecount5 <- dataWecount5 %>% 
+    mutate(classification_5 = factor(classification_5, levels = c("preDobbs", "control5", "spillover_guttmacher", "bans"))) %>% 
+  mutate(Time = factor(Time))
+
+model5 <- lmer(abortion_rate ~ (1 | State) + (1 | Time) + classification_5, data = dataWecount5)
+summary(model5)
+confint(model5)
+
+model6 <- lmer(abortion_rate ~ (1 | State) + (1 | Time) + classification_6, data = dataWC)
+summary(model6)
+confint(model6)
+
+add(model2, "WC Attitude")
+add(model3, "WC Gestational Length")
+add(model3collapsed, "WC Gestational Length Collapsed")
+add(model4, "WC Friendly Not Friendly")
+add(model6, "WC Ban No Ban")
+```
+
+```{r wecounteda}
+# Plot the averages
+ggplot(wDidTotalBanT, aes(x = Time, y = abortion_rate, group = State, color = classification_3)) +
+  geom_line(size = 0.5) +
+  geom_point(size = 1) +  # Point size set to 2
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "WeCount State Abortion Rate by Gestational Ban",
+       x = "Time", y = "Abortion Rate", color = "State Policy") +
+  scale_x_date(labels = scales::date_format("%b %Y")) + 
+  theme_minimal() 
+
+wDidSpillover <- wDidSpillover %>% 
+  mutate(classification_5 = case_when(classification_5 == "spillover_guttmacher" ~ "spillover", classification_5 == "control5" ~ "control"))
+
+ggplot(wDidSpillover, aes(x = as.Date(Time), y = abortion_rate, group = State, color = classification_5)) +
+  geom_line(size = 0.5) +
+  geom_point(size = 1) +  # Point size set to 2
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "WeCount Individual States Abortion Rate by Spillover vs Control",
+       x = "Time", y = "Abortion Rate", color = "State Policy") +
+  scale_x_date(labels = scales::date_format("%b %Y")) + 
+  theme_minimal() 
+```
+
+
+```{r WeCount DiDs Right}
+#total ban wo T 
+total_ban_states_trigger_woT <- c("Alabama", "Arkansas","Kentucky", "Louisiana","Mississippi", "South Dakota")
+
+total_ban_states <- unique(dataWecountRateCorrect$State[dataWecountRateCorrect$classification_3 == "total_ban"])
+total_ban_states
+
+wDidTotalBan <- dataWecountRateCorrect %>% 
+ filter(State %in% total_ban_states_trigger_woT | State %in% control5)
+
+DidTotalBan <- lm(`abortion_rate` ~ BanInEffect * DobbsInEffect, data = wDidTotalBan)
+
+summary(DidTotalBan)
+confint(DidTotalBan)
+
+#total ban w T
+total_ban_states_trigger_T <- c("Alabama", "Arkansas","Kentucky", "Louisiana","Mississippi", "South Dakota", "Texas")
+
+wDidTotalBanT <- dataWecountRateCorrect %>% 
+ filter(State %in% total_ban_states_trigger_T | State %in% control5) 
+
+DidTotalBanT <- lm(`abortion_rate` ~ BanInEffect * DobbsInEffect, data = wDidTotalBanT)
+
+summary(DidTotalBanT)
+confint(DidTotalBanT)
+
+#total ban delayed 
+delayed_total_ban <- c("Idaho","Tennessee", "West Virginia", "Texas")
+wDidTotalBanDelayed <- dataWecountRateCorrect %>% 
+ filter(State %in% delayed_total_ban | State %in% control5) %>% 
+  mutate(TotalBanInEffect = ifelse(Time >= "2022-08-21", 1, 0))
+
+DidTotalBanDelayed <- lm(`abortion_rate` ~ BanInEffect * TotalBanInEffect, data = wDidTotalBanDelayed)
+
+summary(DidTotalBanDelayed)
+confint(DidTotalBanDelayed)
+
+#Spillovers 
+wDidSpillover <- dataWecount5 %>%
+ filter(State %in% unique(dataWecount5$State[dataWecount5$classification_5 == "spillover_guttmacher"]) | State %in% control5) %>%
+ filter(classification_5 %in% c("spillover_guttmacher", "control5", "preDobbs")) %>%
+  mutate(classification_5 = case_when(State %in% unique(dataWecount5$State[dataWecount5$classification_5 == "spillover_guttmacher"]) ~ "spillover_guttmacher",
+     State %in% control5 ~ "control5",
+       TRUE ~ as.character(classification_5))) %>%
+  mutate(spilloverI = ifelse(classification_5 == "spillover_guttmacher", 1,0))
+
+wDidSpillover <- dataWC %>% 
+  filter(classification_5 %in% c("spillover_guttmacher","control5")) %>% 
+  filter(flip_flop == 0) %>% 
+    mutate(spilloverI = ifelse(classification_5 == "spillover_guttmacher", 1,0))
+  
+DidTotalBanSpillover <- lm(`abortion_rate` ~ spilloverI * DobbsInEffect, data = wDidSpillover)
+
+unique(wDidSpillover$State[wDidSpillover$classification_5 =="spillover_guttmacher"])
+
+summary(DidTotalBanSpillover)
+confint(DidTotalBanSpillover)
+
+wDidBans <- dataWC %>% 
+  filter(classification_5 %in% c("bans","control5") | State == "Missouri") %>% 
+  filter(!State %in% c("Nebraska", "North Carolina", "Indiana", "Iowa")) %>%
+    mutate(banI = ifelse(classification_5 == "bans", 1,0))
+
+unique(wDidBans$State[wDidBans$classification_5 =="bans"])
+
+DidBansGeneral <- lm(`abortion_rate` ~ BanInEffect * DobbsInEffect, data = wDidBans)
+
+summary(DidBansGeneral)
+confint(DidBansGeneral)
+
+add(DidTotalBan, "WC DID Total Ban woT")
+add(DidTotalBanT, "WC DID Total Ban wT")
+add(DidTotalBanDelayed, "WC DID Total Ban Delayed")
+add(DidTotalBanSpillover, "WC Spillover")
+add(DidBansGeneral, "WC Pre-Viability Bans")
+```
+
+```{r SDID Function}
+sdid <- function(data, treated_name) {
+  # Prepare the setup for Synth Did
+  setup <- panel.matrices(as.data.frame(data), 
+                          unit = "State", 
+                          time = "Time", 
+                          outcome = "abortion_rate", 
+                          treatment = "Treated")
+
+  # Estimate the Synthetic Difference-in-Differences (SynthDiD) effect
+  tau.hat = synthdid_estimate(setup$Y, setup$N0, setup$T0)
+
+  # Compute the standard error using bootstrap
+  se = sqrt(vcov(tau.hat, method = 'bootstrap'))
+  print(se)
+  
+  # Print the point estimate and 95% confidence interval
+  print(sprintf('Point estimate: %1.2f', tau.hat))
+  print(sprintf('95%% CI (%1.2f, %1.2f)', tau.hat - 1.96 * se, tau.hat + 1.96 * se))
+
+  # Estimate using Synthetic Control and Difference-in-Differences
+  tau.sc = sc_estimate(setup$Y, setup$N0, setup$T0)
+  tau.did = did_estimate(setup$Y, setup$N0, setup$T0)
+  
+  # Store all estimates in a list
+  estimates = list(tau.did, tau.sc, tau.hat)
+  names(estimates) = c('Diff-in-Diff', 'Synthetic Control', 'Synthetic Diff-in-Diff')
+  print(unlist(estimates))
+  # Plot the results
+  synthdid_plot(tau.hat, se.method = 'bootstrap', control.name='Control', treated.name=treated_name)
+}
+
+sdidunitplot <- function(data){
+    setup <- panel.matrices(as.data.frame(data), 
+                          unit = "State", 
+                          time = "Time", 
+                          outcome = "abortion_rate", 
+                          treatment = "Treated")
+  tau.hat = synthdid_estimate(setup$Y, setup$N0, setup$T0)
+    synthdid_units_plot(tau.hat, se.method = 'bootstrap')
+}
+
+sdid_add <- function(tau_hat, se, treated_name) {
+  # Compute confidence intervals
+  lower <- tau_hat - 1.96 * se
+  upper <- tau_hat + 1.96 * se
+  
+  # Create a data frame for the estimates
+  estimates_df <- data.frame(
+    Model = treated_name,
+    Variable = "Synthetic Diff-in-Diff",  # For this case, we are only interested in one variable
+    Estimate = tau_hat,
+    Lower = lower,
+    Upper = upper
+  )
+  
+  # Append the estimates to the global model_results_df
+  assign("model_results_df", rbind(model_results_df, estimates_df), envir = .GlobalEnv)
+}
+```
+
+```{r WeCount SynthDid Ban}
+wecountSDIDTotalBan <- wDidTotalBan %>%
+  mutate(Treated = ifelse(BanInEffect == 1 & DobbsInEffect == 1, 1, 0))
+
+sdid(wecountSDIDTotalBan, "WeCount Total Ban without Texas")
+sdidunitplot(wecountSDIDTotalBan)
+sdid_add(-0.5417141, 0.1043985, "WC SDID Total Ban without Texas")
+
+#TOTAL BAN WITH TEXAS 
+wecountSDIDTotalBanT <- wDidTotalBanT %>%
+  mutate(Treated = ifelse(BanInEffect == 1 & DobbsInEffect == 1, 1, 0))
+      
+sdid(wecountSDIDTotalBanT, "WeCount Total Ban with Texas")
+sdidunitplot(wecountSDIDTotalBanT)
+sdid_add(-0.35, -0.3529444, "WC SDID Total Ban with Texas")
+
+
+#DELAYED BANS 
+wecountSDIDTotalBanDelayed <- wDidTotalBanDelayed %>%
+  mutate(Treated = ifelse(BanInEffect == 1 & DobbsInEffect == 1, 1, 0))
+
+sdid(wecountSDIDTotalBanDelayed, "WeCount Total Ban Delayed")
+sdid_add(-0.6914496, 0.07376194, "WC SDID Total Ban Delayed")
+sdidunitplot(wecountSDIDTotalBanDelayed)
+
+
+#BANS IN GENERAL 
+wSDIDbans <- wDidBans %>% 
+  mutate(Treated = ifelse(BanInEffect == 1 & DobbsInEffect == 1, 1, 0))
+
+sdid(wSDIDbans, "WeCount Pre-Viability Ban")
+sdid_add(-0.33, 0.1157856, "WC SDID Pre-Viability Ban")
+sdidunitplot(wSDIDbans)
+
+
+#SPILLOVER 
+wSDidSpillover <- wDidSpillover %>% 
+    mutate(Treated = ifelse(spilloverI == 1 & DobbsInEffect == 1, 1, 0))
+
+sdid(wSDidSpillover, "WeCount Spillover")
+sdid_add(0.18, 0.09485798, "WC SDID Spillover")
+sdidunitplot(wSDidSpillover)
+
+```
+
+```{r wecount bans SDID all together}
+legal <- laws$State[laws$Status == "legal" | laws$Status == "legal "]
+spill <- setdiff(legal, control5)
+dataSDIDwecountBans <- dataWC %>%
+  left_join(laws, by = "State") %>% 
+  filter(!State %in% c("Nebraska", "North Carolina", "Indiana", "Iowa")) %>%
+  filter(!(State %in% spill)) %>%
+  mutate(
+   Time = as.Date(Time),  
+    Treated = case_when(
+      Status.y %in% c("legal", "legal ") ~ 0,
+      Status.y != "legal" & Status.y != "legal " & Time <= as.Date(effective_date.y) ~ 0,
+      Status.y != "legal" & Status.y != "legal " & Time >= as.Date(effective_date.y) ~ 1,
+      TRUE ~ 0
+    )
+)
+```
+
+```{r WeCount SynthDid Spillover Rate}
+#Spillovers 
+wDidSpillover <- dataWC %>% 
+  filter(!flip_flop == 1) %>% 
+ filter(classification_5 == "spillover_guttmacher" | classification_5 == "control5") %>% 
+  mutate(spilloverI = ifelse(classification_5 == "spillover_guttmacher", 1,0))
+
+wecountSynthDidSpillover <- wDidSpillover %>%
+  filter(!State %in% flipflop) %>% 
+  mutate(Treatment = ifelse(spilloverI == 1  & DobbsInEffect == 1, 1, 0))
+
+colSums(is.na(wecountSynthDidSpillover))
+missing_rows <- wecountSynthDidSpillover[apply(is.na(wecountSynthDidSpillover), 1, any), ]
+print(missing_rows)
+      
+#setup the data for synthdid package
+setup <- panel.matrices(wecountSynthDidSpillover, 
+                        unit = "State", 
+                        time = "Time", 
+                        outcome = "abortion_rate", 
+                        treatment = "Treatment")
+
+tau.hat = synthdid_estimate(setup$Y, setup$N0, setup$T0)
+summary(tau.hat)
+
+se = sqrt(vcov(tau.hat, method='bootstrap'))
+sprintf('point estimate: %1.2f', tau.hat)
+sprintf('95%% CI (%1.2f, %1.2f)', tau.hat - 1.96 * se, tau.hat + 1.96 * se)
+
+tau.sc   = sc_estimate(setup$Y, setup$N0, setup$T0)
+tau.did  = did_estimate(setup$Y, setup$N0, setup$T0)
+estimates = list(tau.did, tau.sc, tau.hat)
+names(estimates) = c('Diff-in-Diff', 'Synthetic Control', 'Synthetic Diff-in-Diff')
+
+print(unlist(estimates))
+
+synthdid_plot(tau.hat, se.method='bootstrap')
+synthdid_units_plot(tau.hat, se.method='bootstrap')
+```
+
+```{r Guttmacher data wrangling}
+dataGuttmacherMonthly <-read.csv("data/MonthlyAbortionProvisionMonthly.csv")
+
+dataGuttmacherMonthly <- dataGuttmacherMonthly %>% rename(State = "state") %>% rename(Abortions = "median")
+
+dataGuttmacherMonthly <- dataGuttmacherMonthly %>%
+  left_join(state_lookup, by = "State") %>% 
+  rename(Time = "month") %>% 
+  mutate(Time = as.Date(Time),  # Convert Time to Date if it's not already
+         Year = year(Time)) %>%
+  select(-State) %>%  # Remove old State column
+  rename(State = State_Full)  # Rename the new full name column to 'State'
+
+dataGuttmacherMonthlyRate <- dataGuttmacherMonthly %>%
+  left_join(bigpop, by = c("State", "Year")) %>%
+  mutate(abortion_rate = Abortions / repf_population * 1000)
+
+dataGuttmacherMonthlyRateSimple <- dataGuttmacherMonthlyRate %>%
+  filter(State != "US") %>%      # Exclude rows where State == "US"
+  select(abortion_rate, State, Time)  %>% 
+  mutate(Monthly = 1)
+
+#GUTTMACHER DATA PRE 2020
+dataGuttmacherAnnualPre2020 <- read.xlsx("data/abortion rate state of residence annual pre 2020GuttmacherDataCenter.xlsx")
+
+dataGuttmacherAnnualPre2020 <- dataGuttmacherAnnualPre2020[1:51, ]  # Keep only the first 51 rows
+
+# Extract current column names
+old_names <- colnames(dataGuttmacherAnnualPre2020)
+# Extract years from column names
+new_names <- str_extract(old_names, "\\d{4}")  # Extract four-digit years
+# Replace NA values (for columns without a year, like "U.S..State") with original names
+new_names[is.na(new_names)] <- old_names[is.na(new_names)]
+# Rename columns in the data frame
+colnames(dataGuttmacherAnnualPre2020) <- new_names
+
+dataGuttmacherAnnualPre2020 <- dataGuttmacherAnnualPre2020 %>% 
+  rename(State = "U.S..State")  %>% 
+pivot_longer(
+    cols = -State,              # all columns except 'state'
+    names_to = "Time",          # year values go into a 'year' column
+    values_to = "abortion_rate"          # rate values go into a 'rate' column
+  ) %>% 
+  mutate(Monthly = 0)
+
+dataGuttmacherAnnualPre2020 <- dataGuttmacherAnnualPre2020 %>% 
+  mutate(Time = as.Date(paste0(Time, "-01-01"))) %>% 
+  mutate (abortion_rate = as.numeric(abortion_rate) / 12)
+
+not_total_ban <- unique(dataGuttmacherMonthlyRateSimple$State)
+total_ban_guttmacher <- setdiff(States, not_total_ban)
+
+total_ban_entries <- transform(expand.grid(
+  State = total_ban_guttmacher,
+  Time = seq(as.Date("2023-01-15"), as.Date("2024-10-15"), by = "month")
+), abortion_rate = 0, Monthly = 1)
+
+
+CombinedGuttmacher <- rbind(dataGuttmacherAnnualPre2020, dataGuttmacherMonthlyRateSimple)
+
+CombinedGuttmacher <- rbind(CombinedGuttmacher, total_ban_entries)
+
+CombinedGuttmacher$abortion_rate <- as.numeric(CombinedGuttmacher$abortion_rate) 
+
+#MORE WRANGLING
+CombinedGuttmacher <- left_join(CombinedGuttmacher, classify)
+
+CombinedGuttmacher <- CombinedGuttmacher %>% 
+    mutate(
+      DobbsTime = ifelse(Time >= as.Date("2022-07-01"), 1, 0), 
+      classification_1 = factor(classification_1, levels = c("control", "spillover_geography", "other_banned", "june_trigger")),
+    classification_2 = factor(classification_2, levels = c("protected", "not_protected","expanded_access", "hostile", "illegal")),
+    classification_3 = factor(classification_3, levels =c("no_limit", "viability", "twenty_four_week", "twenty_two_week", "eighteen_week", "twelve_week", "six_week", "total_ban")),    
+    classification_4 = factor(classification_4, levels =c("friendly", "not_friendly")), 
+    classification_5 = factor(classification_5, levels =c("bans", "control5", "spillover_guttmacher"))
+      ) # Time column for dates after June 1, 2022
+
+CombinedGuttmacher <- CombinedGuttmacher %>% 
+  mutate(DobbsInEffect = ifelse(Time > as.Date("2022-06-24"), 1, 0),
+         BanInEffect = ifelse(classification_5 == "bans", 1, 0)
+         ) 
+
+# Combine with the original dataset
+states <- c("Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", 
+            "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", 
+            "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", 
+            "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", 
+            "New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina", 
+            "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", 
+            "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", 
+            "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming", "District of Columbia")
+
+new_entries <- transform(expand.grid(
+  State = states,
+  Time = seq(as.Date("2020-01-15"), as.Date("2023-01-01"), by = "month")
+), abortion_rate = NA)
+
+
+CombinedGuttmacher_dashed <- bind_rows(CombinedGuttmacher, new_entries)
+
+CombinedGuttmacher_filtered <- CombinedGuttmacher_dashed %>%
+  filter(Time %in% as.Date(c("2020-01-01", "2023-01-15")))
+
+CombinedGuttmacherPost2015_dashed <- CombinedGuttmacher_dashed %>%
+  filter(Time >= as.Date("2015-01-01"))
+
+CombinedGuttmacherPost2015 <- CombinedGuttmacher %>%
+  filter(Time >= as.Date("2015-01-01"))
+
+CombinedGuttmacherPre2020 <- CombinedGuttmacher %>%
+  filter(Time <= as.Date("2020-01-01"))
+```
+
+```{r Guttmacher right times}
+CombinedGuttmacherCorrect <- left_join(CombinedGuttmacher, flip_laws)
+CombinedGuttmacher
+CombinedGuttmacherCorrect <- CombinedGuttmacherCorrect %>%  
+  mutate(classification_3 = ifelse(Time <= as.Date("2022-06-24"), "preDobbs", as.character(classification_3)))
+      
+#correcting the ban categories FOR WECOUNT: 
+CombinedGuttmacherCorrect <- CombinedGuttmacherCorrect %>%  
+  mutate(
+    Status = ifelse(State == "Missouri", "total_ban", Status), 
+    classification_3 = case_when(
+      State == "Texas" & Time >= as.Date("2021-09-01") &  Time <= as.Date("2022-08-25") ~ "six_week",
+      State == "Texas" & Time > as.Date("2022-08-25") ~ "total_ban",
+      State == "Arizona" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-10-27")  ~ "fifteen_week", 
+      State == "Arizona" & Time > as.Date("2022-10-27") ~ "viability",  
+      State == "Florida" & Time >= as.Date("2022-07-01") & Time < as.Date("2024-05-01") ~ "fifteen_week",
+      State == "Florida" & Time >= as.Date("2024-05-01") ~ "six_week",  
+      State == "Missouri" & Time >= as.Date("2022-06-24") & Time < as.Date("2024-12-23") ~ "total_ban",
+      State == "Missouri" & Time >= as.Date("2024-12-23") ~ "viability",  
+      State == "North Carolina" & Time >= as.Date("2023-07-01") ~ "twelve_week",  # NC 12-week ban
+      State == "North Carolina" & Time < as.Date("2023-07-01") & Time >= as.Date("2022-06-24") ~ "viability",  # NC 12-week ban
+      State == "North Dakota" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-07-28")  ~ "viability", 
+      State == "North Dakota" & Time >= as.Date("2022-07-28") & Time < as.Date("2024-09-12") ~ "total_ban",  # ND total ban
+      State == "North Dakota" & Time >= as.Date("2024-09-12") ~ "viability",  
+      State == "Ohio" & Time >= as.Date("2022-09-14") ~ "viability",  
+      State == "Ohio" & Time < as.Date("2022-09-14") & Time >= as.Date("2022-06-24") ~ "six_week",  
+      State == "South Carolina" & Time >= as.Date("2023-08-23") ~ "six_week",  # SC 6-week ban
+      State == "South Carolina" & Time < as.Date("2023-08-23") & Time >= as.Date("2022-08-17") ~ "twenty_week",  
+      State == "South Carolina" & Time < as.Date("2022-08-17") & Time >= as.Date("2022-06-24") ~ "six_week",  
+      State == "Wisconsin" & Time >= as.Date("2022-06-24") & Time < as.Date("2023-08-18")  ~ "total_ban", 
+      State == "Wisconsin" & Time >= as.Date("2023-08-18")  ~ "viability",  
+      State == "Wyoming" & Time >= as.Date("2022-06-24") & Time < as.Date("2024-11-19") ~ "total_ban",  
+      State == "Wyoming" & Time >= as.Date("2024-11-19") ~ "viability",  
+      State == "Iowa" & Time >= as.Date("2022-06-24") & Time < as.Date("2024-07-29") ~ "viability", 
+      State == "Iowa" & Time >= as.Date("2024-07-29") ~ "six_week", 
+      State == "Georgia" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-11-23") ~ "twenty_two_week",  
+      State == "Georgia" & Time > as.Date("2022-11-23") ~ "six_week",  
+      State == "Nebraska" & Time > as.Date("2023-05-22") ~ "twelve_week",  
+      State == "Nebraska" & Time >= as.Date("2022-06-24") & Time < as.Date("2023-05-22") ~ "viability", 
+      State == "Idaho" & Time > as.Date("2022-08-25") ~ "total_ban",  
+      State == "Idaho" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-08-25") ~ "viability", 
+      State == "Indiana" & Time >= as.Date("2023-08-21") ~ "total_ban",  
+      State == "Indiana" & Time >= as.Date("2022-06-24") & Time < as.Date("2023-08-21") ~ "viability", 
+      State == "Tennessee" & Time >= as.Date("2022-08-25") ~ "total_ban",  
+      State == "Tennessee" & Time >= as.Date("2022-06-24") & Time <= as.Date("2022-08-25") ~ "viability", 
+      State == "West Virginia" & Time >= as.Date("2022-09-16") ~ "total_ban",  
+      State == "West Virginia" & Time >= as.Date("2022-06-24") & Time < as.Date("2022-09-16") ~ "viability",       
+      State == "Oklahoma" & Time > as.Date("2022-05-25") ~ "total_ban",  
+      TRUE ~ as.character(classification_3)  # Keep existing classification_3 for all other states
+  )
+  )
+
+unique(CombinedGuttmacherCorrect$State[classification_3 == "total_ban" | classification_3 == "six_week" | classification_3 == "twelve_week" | classification_3 == "eighteen_week"])
+
+CombinedGuttmacherCorrect <- CombinedGuttmacherCorrect %>% 
+   mutate(BanInEffect = ifelse(classification_5 == "bans", 1,0))
+
+sum(CombinedGuttmacherCorrect$classification_3 == "preDobbs")
+
+unique(CombinedGuttmacherCorrect$classification_4)
+
+#FIXING CLASSIFICATION 6
+CombinedGuttmacherCorrect <- CombinedGuttmacherCorrect %>%  
+  mutate(flip_flop = case_when(
+    Status == "flip_flop" ~ 1,
+    TRUE ~ 0)) %>% 
+  mutate(classification_6 = ifelse(classification_3 == "total_ban" | classification_3 == "six_week" | classification_3 == "twelve_week" | classification_3 == "eighteen_week", "ban", "no_ban")) 
+
+# Combine with the original dataset
+CombinedGuttmacher_dashed <- bind_rows(CombinedGuttmacherCorrect, new_entries)
+
+CombinedGuttmacher_filtered <- CombinedGuttmacher_dashed %>%
+  filter(Time %in% as.Date(c("2020-01-01", "2023-01-15")))
+
+CombinedGuttmacherPost2015_dashed <- CombinedGuttmacher_dashed %>%
+  filter(Time >= as.Date("2015-01-01"))
+
+CombinedGuttmacherPost2015 <- CombinedGuttmacherCorrect %>%
+  filter(Time >= as.Date("2015-01-01"))
+
+CombinedGuttmacherPre2020 <- CombinedGuttmacherCorrect %>%
+  filter(Time <= as.Date("2020-01-01"))
+
+CombinedGuttmacherCorrect <- CombinedGuttmacherCorrect %>% 
+  rename(Time = Time)
+```
+
+```{r Guttmacher Mixed Effects Set Up}
+unique(CombinedGuttmacherPost2015$classification_3)
+CombinedGuttmacherPost2015 <- CombinedGuttmacherPost2015 %>% 
+  mutate(
+    collapsed3 = ifelse(
+      classification_3 == "twelve_week" | 
+      classification_3 == "fifteen_week" | 
+      classification_3 == "eighteen_week" | 
+      classification_3 == "twenty_week", 
+      "between_7_20_weeks", 
+      ifelse(
+        classification_3 == "viability" | 
+        classification_3 == "twenty_four_week" | 
+        classification_3 == "twenty_week" | 
+        classification_3 == "twenty_two_week", 
+        "viability", 
+        as.character(classification_3)  # Keep the original value if neither condition is met
+      )
+    )
+  )
+dataGMC <- CombinedGuttmacherPost2015 %>% 
+    mutate(
+    classification_1 = factor(classification_1, levels = c("control", "spillover_geography", "other_banned", "june_trigger")),
+    classification_2 = factor(classification_2, levels = c("protected","not_protected","expanded_access", "hostile", "illegal")),
+    classification_3 = factor(classification_3, levels =c("preDobbs", "no_limit", "viability", "twenty_four_week", "twenty_two_week","twenty_week", "eighteen_week", "fifteen_week", "twelve_week", "six_week", "total_ban")), 
+    collapsed3 = factor(collapsed3, levels =c("preDobbs", "no_limit", "viability", "between_7_20_weeks", "six_week", "total_ban")),    
+    classification_4 = factor(classification_4, levels =c("friendly", "not_friendly")), 
+    classification_5 = factor(classification_5, levels =c("control5", "bans", "spillover_guttmacher")), 
+    classification_6 = factor(classification_6, levels =c("no_ban", "ban"))
+      ) # Time column for dates after June 1, 2022
+```
+
+```{r Guttmacher redoing it on 2017}
+dataGMCpost2017 <- dataGMC %>% 
+  filter(Time >= as.Date("2017-01-01"))
+
+dataGMCpost2017$Time <- as.factor(dataGMCpost2017$Time)
+
+model2g7 <- lmer(abortion_rate~ DobbsInEffect*classification_2 + (1 | State) + (1|Time), weights = 1 + 11 * (1-Monthly),   data = dataGMCpost2017)
+
+summary(model2g7)
+confint(model2g7)
+
+model3g7 <- lmer(abortion_rate ~ (1 | State) + classification_3 + (1 | State), 
+                    weights = 1 + 11 * (1-Monthly),  data = dataGMCpost2017)
+summary(model3g7)
+confint(model3g7)
+
+model3collapsedg7 <- lmer(abortion_rate ~ (1 | State) + collapsed3 + (1 | State) , 
+                    weights = 1 + 11 * (1-Monthly),   data = dataGMCpost2017)
+
+summary(model3collapsedg7)
+confint(model3collapsedg7)
+
+model4g7 <- lmer(abortion_rate ~ (1 | State) + (1 | State) + DobbsInEffect*classification_4, 
+                    weights = 1 + 11 * (1-Monthly),   data = dataGMCpost2017)
+
+summary(model4g7)
+confint(model4g7)
+
+
+#throw out flipflop
+flipflop <- unique(CombinedGuttmacherPost2015$State[CombinedGuttmacherPost2015$Status == "flip_flop"])
+
+dataGMCpost2017 <- dataGMCpost2017 %>% 
+  filter(!State %in% flipflop) %>% 
+  mutate(
+    Time = as.Date(Time), 
+    classification_5 = case_when(
+      Time <= as.Date("2022-06-24") ~ "preDobbs",  # Apply preDobbs first
+      classification_5 != "control5" & classification_6 == "no_ban" ~ "spillover_guttmacher",
+      TRUE ~ as.character(classification_5)  
+    ))
+
+dataGMCpost2017_5 <- dataGMCpost2017 %>% 
+    mutate(classification_5 = factor(classification_5, levels = c("preDobbs", "control5", "spillover_guttmacher", "bans"))) %>% 
+  mutate(Time = factor(Time))
+
+model5g7 <- lmer(abortion_rate ~ (1 | State) + (1 | State) + classification_5, 
+                    weights = 1 + 11 * (1-Monthly),   data = dataGMCpost2017_5)
+summary(model5g7)
+confint(model5g7)
+
+model6g7 <- lmer(abortion_rate ~ (1 | State) + (1 | State) + classification_6, 
+                    weights = 1 + 11 * (1-Monthly),   data = dataGMCpost2017)
+summary(model6g7)
+confint(model6g7)
+
+add(model2g7, "GM Attitude2")
+add(model3g7, "GM Gestational Length")
+add(model3collapsedg7, "GM Gestational Length Collapsed")
+add(model4g7, "GM Friendly Not Friendly")
+add(model6g7, "GM Ban No Ban")
+```
+
+```{r Guttmacher SDID}
+dataGMCSDID <- dataGMCpost2017 %>% 
+  filter(Time < "2024-07-01")
+
+legal <- laws$State[laws$Status == "legal" | laws$Status == "legal "]
+spill <- setdiff(legal, control5)
+
+dataGMCSDIDbans <- dataGMCSDID %>%
+  left_join(laws, by = "State") %>% 
+  filter(!State %in% c("Nebraska", "North Carolina", "Indiana", "Iowa")) %>%
+  filter(!(State %in% spill)) %>%
+  mutate(
+   Time = as.Date(Time),  
+    Treated = case_when(
+      Status.y %in% c("legal", "legal ") ~ 0,
+      Status.y != "legal" & Status.y != "legal " & Time <= as.Date(effective_date.y) ~ 0,
+      Status.y != "legal" & Status.y != "legal " & Time >= as.Date(effective_date.y) ~ 1,
+      TRUE ~ 0
+    )
+  )
+sdid(dataGMCSDIDbans, "Guttmacher Pre-Viability Bans")
+sdidunitplot(dataGMCSDIDbans)
+sdid_add(-0.94, 0.1625614, "GM SDID Pre-Viability Bans")
+
+#TOTAL BANS 
+dataGMCSDID_totalbans <- dataGMCpost2017 %>% 
+  filter(State %in% total_ban_states | State %in% control5) %>% 
+  filter(State != "Indiana") %>% 
+  filter(!(State %in% spill)) %>%
+  mutate(
+   Time = as.Date(Time),  
+    Treated = ifelse(State %in% total_ban_states & Time >= "2022-06-24", 1, 0)
+    )
+
+sdid(dataGMCSDID_totalbans, "Guttmacher Total Ban")
+sdidunitplot(dataGMCSDID_totalbans)
+sdid_add(-1.10, 0.1533239, "GM SDID Total Ban")
+
+
+#SPILLOVER 
+dataGMCSDID_gutt_spill <- dataGMCpost2017 %>% 
+  filter(State %in% spill | State %in% control5) %>% 
+  mutate(
+   Time = as.Date(Time),  
+    Treated = ifelse(State %in% spill & Time >= "2022-06-24", 1, 0)
+    )
+
+sdid(dataGMCSDID_gutt_spill, "Guttmacher Spillover")
+sdidunitplot(dataGMCSDID_gutt_spill)
+sdid_add(0.41, 0.2921669, "GM SDID Spillover")
+```
+
+```{r WeCount "Bans" SDIDs}
+dataWCSDID <- dataWecountRateCorrect %>% 
+  filter(Time <= "2022-06-24" | Time >= "2023-01-01" & Time < "2024-07-01")
+
+legal <- laws$State[laws$Status == "legal" | laws$Status == "legal "]
+spill <- setdiff(legal, control5)
+
+dataWCSDID <- dataWCSDID %>%
+  left_join(laws, by = "State") %>% 
+  filter(!State %in% c("Nebraska", "North Carolina", "Indiana", "Iowa")) %>%
+  filter(!(State %in% spill)) %>%
+  mutate(
+   Time = as.Date(Time),  
+    Treated = ifelse(
+      Status.y %in% c("legal", "legal ") | Time <= "2022-06-24", 0, 1)
+  )
+sdid(dataWCSDID, "WeCount Pre-Viability Bans")
+sdidunitplot(dataWCSDID)
+
+length(ban_states)
+length(spill)
+length(control5)
+
+synthdid_plot(estimates, facet.vertical=FALSE,
+              control.name='control', treated.name="WeCount Pre-Viability Bans",
+              lambda.comparable=TRUE, se.method = 'bootstrap',
+              trajectory.linetype = 1, line.width=.75, effect.curvature=-.4,
+              trajectory.alpha=.7, effect.alpha=.7,
+              diagram.alpha=1, onset.alpha=.7) +
+    theme(legend.position=c(.26,.07), legend.direction='horizontal',
+          legend.key=element_blank(), legend.background=element_blank(),
+          strip.background=element_blank(), strip.text.x = element_blank())
+week6states
+
+sdid(wecountSDIDTotalBanT, "WeCount Total Ban with Texas")
+sdidunitplot(wecountSDIDTotalBanT)
+```
+
+```{r Guttmacher SDID Spillover and Total Ban}
+dataGMCSDIDspillover <- dataGMCpost2017 %>% 
+  
+legal <- laws$State[laws$Status == "legal" | laws$Status == "legal "]
+spill <- setdiff(legal, control5)
+dataGMCSDID <- dataGMCSDID %>%
+  left_join(laws, by = "State") %>% 
+  filter(!State %in% c("Nebraska", "North Carolina", "Indiana", "Iowa")) %>%
+  filter(!(State %in% spill)) %>%
+  mutate(
+   Time = as.Date(Time),  
+    Treated = case_when(
+      Status.y %in% c("legal", "legal ") ~ 0,
+      Status.y != "legal" & Status.y != "legal " & Time <= as.Date(effective_date.y) ~ 0,
+      Status.y != "legal" & Status.y != "legal " & Time >= as.Date(effective_date.y) ~ 1,
+      TRUE ~ 0
+    )
+  )
+```
+
+```{r SDID Georgia 6 Weeks}
+dataWCGeorgia <- dataWC %>% 
+  filter(classification_5 == "control5" | State == "Georgia") %>% 
+  mutate(Treated = ifelse(State == "Georgia" & as.Date(Time) >= effective_date, 1, 0))
+
+sdid(dataWCGeorgia, "WeCount Georgia 6-Week Ban")
+sdidunitplot(dataWCGeorgia)
+dataGuttGeorgia <- dataGMC %>% 
+  filter(classification_5 == "control5" | State == "Georgia") %>% 
+  mutate(Treated = ifelse(State == "Georgia" & Time >= effective_date, 1, 0))
+
+sdid(dataGuttGeorgia, "Guttmacher Georgia 6-Week Ban")
+```
+
+```{r SDID just estimates}
+sdidestimates <- function(data) {
+  # Prepare the setup for Synth Did
+  setup <- panel.matrices(as.data.frame(data), 
+                          unit = "State", 
+                          time = "Time", 
+                          outcome = "abortion_rate", 
+                          treatment = "Treated")
+
+  # Estimate the Synthetic Difference-in-Differences (SynthDiD) effect
+  tau.hat = synthdid_estimate(setup$Y, setup$N0, setup$T0)
+  print(summary(tau.hat))
+  
+  # Compute the standard error using bootstrap
+  se = sqrt(vcov(tau.hat, method = 'bootstrap'))
+  
+  # Print the point estimate and 95% confidence interval
+  print(sprintf('Point estimate: %1.2f', tau.hat))
+  print(sprintf('95%% CI (%1.2f, %1.2f)', tau.hat - 1.96 * se, tau.hat + 1.96 * se))
+}
+```
+
+```{r Graphing class 5}
+# Classification 5 graph
+
+dataWecount5$Time <- as.Date(dataWecount5$Time)
+dataGM5$Time <- as.Date(dataGM5$Time)
+
+class5 <- dataWecount5 %>%
+  group_by(Time, classification_5) %>%
+  summarise(
+    avg_abortion_rate = mean(abortion_rate, na.rm = TRUE),
+    se_abortion_rate = sd(abortion_rate, na.rm = TRUE) / sqrt(n()),  # Standard Error
+    ci_lower = avg_abortion_rate - 1.96 * se_abortion_rate,  # Lower 95% CI
+    ci_upper = avg_abortion_rate + 1.96 * se_abortion_rate   # Upper 95% CI
+  ) %>%
+  ungroup()
+
+lighter_colors <- c("orchid","dodgerblue","yellowgreen","tomato")
+
+# Plot the averages
+w5 <- ggplot(class5, aes(x = Time, y = avg_abortion_rate, color = classification_5, fill = classification_5)) +
+    geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.2, size = 0.1) + 
+  geom_line(size = 1) +
+    geom_point(size = 1) +  # Point size set to 2
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "WeCount Ban vs Spillover vs Control",
+       x = "Time",
+       y = "Average Abortion Rate (per 1000 Reproductive Age Women)",
+       color = "State Type", 
+       fill = "95% CI") +
+  theme_minimal() +
+     scale_x_date(labels = scales::date_format("%b %Y"), 
+                 breaks = "3 month") +  
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +  
+  theme(
+    legend.text = element_text(size = 8),              
+    legend.title = element_text(size = 10),            
+    legend.key.size = unit(0.5, "cm"),                
+    legend.spacing.y = unit(0.3, "cm"),
+    axis.title.y = element_text(size = 8),
+    plot.title = element_text(hjust = 0.5, size = 15)  # Center the plot title
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  scale_color_manual( values = lighter_colors, 
+    labels = c("spillover_guttmacher" = "Spillover", 
+               "control5" = "Control", 
+               "bans" = "Bans")
+  )  +  scale_fill_manual( values = lighter_colors, 
+    labels = c("spillover_guttmacher" = "Spillover", 
+               "control5" = "Control", 
+               "bans" = "Bans")
+  )  
+
+# Classification 5 graph
+gclass5 <- dataGM5 %>%
+  filter(Time >= as.Date("2017-01-01")) %>%
+  group_by(Time, classification_5) %>%
+  summarise(
+    avg_abortion_rate = mean(abortion_rate, na.rm = TRUE),
+    se_abortion_rate = sd(abortion_rate, na.rm = TRUE) / sqrt(n()),  # Standard Error
+    ci_lower = avg_abortion_rate - 1.96 * se_abortion_rate,  # Lower 95% CI
+    ci_upper = avg_abortion_rate + 1.96 * se_abortion_rate   # Upper 95% CI
+  ) %>%
+  ungroup()
+
+# Plot the averages
+# Plot the averages
+g5 <- ggplot(gclass5, aes(x = Time, y = avg_abortion_rate, color = classification_5, fill = classification_5)) +
+  geom_line(size = 1) +
+    geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.2, size = 0.1) + 
+    geom_point(size = 1) +  # Point size set to 2
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "Guttmacher Ban vs Spillover vs Control",
+       x = "Time",
+       y = "Average Abortion Rate (per 1000 Reproductive Age Women)",
+       color = "State Type", 
+       fill = "95% CI") +
+    theme_minimal() +
+     scale_x_date(labels = scales::date_format("%b %Y"), 
+                 breaks = "12 month") +  
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 10)) +  # Add more ticks to y-axis with pretty breaks
+  theme(
+    legend.text = element_text(size = 8),              
+    legend.title = element_text(size = 10),            
+    legend.key.size = unit(0.5, "cm"),
+    axis.title.y = element_text(size = 8), 
+    legend.spacing.y = unit(0.3, "cm"),
+    plot.title = element_text(hjust = 0.5, size = 15)  # Center the plot title
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_color_manual(values = lighter_colors, labels = c("spillover_guttmacher" = "Spillover", 
+               "control5" = "Control", 
+               "bans" = "Bans")) +  scale_fill_manual( values = lighter_colors, 
+    labels = c("spillover_guttmacher" = "Spillover", 
+               "control5" = "Control", 
+               "bans" = "Bans")
+  )  
+
+wrap_plots(w5, g5, ncol = 2)
+```
+
+```{r Provider Data Wrangling}
+abortion_providers_data <- read.xlsx("data/Abortion Providers + Clinics GuttmacherDataCenter.xlsx")
+
+colnames(abortion_providers_data)
+
+abortion_providers_data <- abortion_providers_data %>% 
+  rename(repfpop_percent_wo_clinic_2020 = "%.of.women.aged.15-44.living.in.a.county.without.a.clinic,.2020.[1]") %>% 
+  rename(State = "U.S..State")
+
+dataGMC <-
+  left_join(dataGMC, abortion_providers_data) 
+
+dataGMC$repfpop_percent_wo_clinic_2020 <-  as.numeric(dataGMC$repfpop_percent_wo_clinic_2020)
+ 
+ # Create the dataframe ensuring all columns have the same length
+provider2023 <- data.frame(
+  State = c("US", "Alaska", "Alabama", "Arkansas", "Arizona", "California", "Colorado", "Connecticut", "District of Columbia", 
+            "Delaware", "Florida", "Georgia", "Hawaii", "Iowa", "Idaho", "Illinois", "Indiana", "Kansas", "Kentucky", 
+            "Louisiana", "Massachusetts", "Maryland", "Maine", "Michigan", "Minnesota", "Missouri", "Mississippi", 
+            "Montana", "North Carolina", "North Dakota", "Nebraska", "New Hampshire", "New Jersey", "New Mexico", 
+            "Nevada", "New York", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", 
+            "South Dakota", "Tennessee", "Texas", "Utah", "Virginia", "Vermont", "Washington", "Wisconsin", 
+            "West Virginia", "Wyoming"),
+  
+Clinics_in_2020 = c(807, 4, 5, 2, 8, 173, 23, 20, 5, 3, 58, 14, 4, 6, 3, 30, 7, 4, 2, 3, 17, 23, 17, 24, 10, 1, 1, 6, 15, 1, 3, 4, 
+                      37, 6, 9, 104, 10, 5, 17, 17, 1, 3, 1, 7, 24, 2, 17, 6, 37, 4, 1, 2),
+  
+Clinics_as_of_March_2024 = c(765, 3, 0, 0, 7, 180, 23, 18, 4, 4, 54, 14, 4, 5, 0, 32, 0, 6, 0, 0, 23, 26, 18, 25, 12, 0, 0, 5, 14, 0, 
+                               3, 4, 35, 13, 8, 107, 9, 0, 17, 19, 1, 3, 0, 0, 0, 2, 19, 5, 38, 4, 0, 1))
+
+provider2023 <- provider2023 %>% 
+  mutate(percent_change_20_24 = ((Clinics_as_of_March_2024 - Clinics_in_2020)/Clinics_in_2020)*100)
+
+dataGMC <-
+  left_join(dataGMC, provider2023) 
+```
+
+```{r provider guttmacher models}
+model2gp <- lmer(abortion_rate ~ DobbsInEffect*classification_2 + (1 | State) + scale(Time) + percent_change_20_24, 
+                    weights = 1 + 11 * (1-Monthly),   data = dataGMC)
+
+summary(model2gp)
+confint(model2gp)
+
+estimates <- summary(model2g)$coef[, "Estimate"]
+estimates_df <- data.frame(Variable = names(estimates), Estimate = estimates)
+
+lower <- confint(model2g)[,"2.5 %"]
+upper <- confint(model2g)[,"97.5 %"]
+lower_df <- data.frame(Variable = names(lower), Estimate = lower)
+upper_df <- data.frame(Variable = names(upper), Estimate = upper)
+
+
+model3gp <- lmer(abortion_rate ~ (1 | State) + classification_3 + scale(Time) + percent_change_20_24, 
+                    weights = 1 + 11 * (1-Monthly),  data = dataGMC)
+summary(model3gp)
+confint(model3gp)
+
+estimates <- summary(model3g)$coef[, "Estimate"]
+estimates_df <- data.frame(Variable = names(estimates), Estimate = estimates)
+estimates_df <- estimates_df[nrow(estimates_df):1, ]
+
+lower <- confint(model3g)[,"2.5 %"]
+upper <- confint(model3g)[,"97.5 %"]
+lower_df <- data.frame(Variable = names(lower), Estimate = lower)
+upper_df <- data.frame(Variable = names(upper), Estimate = upper)
+lower_df <- lower_df[nrow(lower_df):1, ]
+upper_df <- upper_df[nrow(upper_df):1, ]
+
+
+
+
+
+model3collapsedg <- lmer(abortion_rate ~ (1 | State) + collapsed3 + scale(Time) , 
+                    weights = 1 + 11 * (1-Monthly),   data = dataGMC)
+
+summary(model3collapsedg)
+confint(model3collapsedg)
+
+estimates <- summary(model3collapsedg)$coef[, "Estimate"]
+estimates_df <- data.frame(Variable = names(estimates), Estimate = estimates)
+estimates_df <- estimates_df[nrow(estimates_df):1, ]
+
+lower <- confint(model3collapsedg)[,"2.5 %"]
+upper <- confint(model3collapsedg)[,"97.5 %"]
+lower_df <- data.frame(Variable = names(lower), Estimate = lower)
+upper_df <- data.frame(Variable = names(upper), Estimate = upper)
+lower_df <- lower_df[nrow(lower_df):1, ]
+upper_df <- upper_df[nrow(upper_df):1, ]
+
+
+
+
+
+
+
+model4g <- lmer(abortion_rate ~ (1 | State) + scale(Time) + DobbsInEffect*classification_4, 
+                    weights = 1 + 11 * (1-Monthly),   data = dataGMC)
+
+summary(model4g)
+confint(model4g)
+
+#throw out flipflop
+flipflop <- unique(CombinedGuttmacherPost2015$State[CombinedGuttmacherPost2015$Status == "flip_flop"])
+
+dataGM5 <- dataGMC %>% 
+  filter(!State %in% flipflop) %>% 
+  mutate(
+    classification_5 = ifelse(classification_5 != "control5" & classification_6 == "no_ban", "spillover_guttmacher", as.character(classification_5)),
+    classification_5 = ifelse(classification_6 == "no_ban" & Time < as.Date("2022-06-24"), "preDobbs", as.character(classification_5))
+  )
+
+dataGM5 <- dataGM5 %>% 
+    mutate(classification_5 = factor(classification_5, levels = c("preDobbs", "control5", "spillover_guttmacher", "bans")))
+
+model5g <- lmer(abortion_rate ~ (1 | State) + scale(Time) + classification_5, 
+                    weights = 1 + 11 * (1-Monthly),   data = dataGM5)
+summary(model5g)
+confint(model5g)
+
+# Classification 5 graph
+class5 <- dataGM5 %>%
+  group_by(Time, classification_5) %>%
+  summarise(
+    avg_abortion_rate = mean(abortion_rate, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Plot the averages
+ggplot(class5, aes(x = Time, y = avg_abortion_rate, color = classification_5)) +
+  geom_line(size = 0.5) +
+    geom_point(size = 1) +  # Point size set to 2
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "Guttmacher Average Abortion Rate by Classification 5",
+       x = "Time",
+       y = "Average Abortion Rate") +
+  scale_x_date(labels = scales::date_format("%b %Y")) + 
+  theme_minimal() 
+
+model6g <- lmer(abortion_rate ~ (1 | State) + scale(Time) + classification_6, 
+                    weights = 1 + 11 * (1-Monthly),   data = dataGMC)
+summary(model6g)
+confint(model6g)
+```
+
+```{r provider wecount mixed effects with clinic 2020}
+model2p <- lmer(abortion_rate ~ DobbsInEffect*classification_2 + (1 | State) + scale(Time) + percent_change_20_24, data = dataGMC)
+
+summary(model2p)
+confint(model2p)
+
+estimates <- summary(model2)$coef[, "Estimate"]
+estimates_df <- data.frame(Variable = names(estimates), Estimate = estimates)
+estimates_df <- estimates_df[nrow(estimates_df):1, ]
+
+lower <- confint(model2)[,"2.5 %"]
+upper <- confint(model2)[,"97.5 %"]
+lower_df <- data.frame(Variable = names(lower), Estimate = lower)
+upper_df <- data.frame(Variable = names(upper), Estimate = upper)
+lower_df <- lower_df[nrow(lower_df):1, ]
+upper_df <- upper_df[nrow(upper_df):1, ]
+
+
+model3p <- lmer(abortion_rate ~ (1 | State) + classification_3 + scale(Time) + percent_change_20_24, data = dataGMC)
+
+model3p
+
+estimates <- summary(model3)$coef[, "Estimate"]
+estimates_df <- data.frame(Variable = names(estimates), Estimate = estimates)
+estimates_df <- estimates_df[nrow(estimates_df):1, ]
+
+lower <- confint(model3)[,"2.5 %"]
+upper <- confint(model3)[,"97.5 %"]
+lower_df <- data.frame(Variable = names(lower), Estimate = lower)
+upper_df <- data.frame(Variable = names(upper), Estimate = upper)
+lower_df <- lower_df[nrow(lower_df):1, ]
+upper_df <- upper_df[nrow(upper_df):1, ]
+
+model3collapsed <- lmer(abortion_rate ~ (1 | State) + collapsed3 + scale(Time) , data = dataWC)
+
+summary(model3collapsed)
+confint(model3collapsed)
+
+estimates <- summary(model3collapsed)$coef[, "Estimate"]
+estimates_df <- data.frame(Variable = names(estimates), Estimate = estimates)
+estimates_df <- estimates_df[nrow(estimates_df):1, ]
+
+lower <- confint(model3collapsed)[,"2.5 %"]
+upper <- confint(model3collapsed)[,"97.5 %"]
+lower_df <- data.frame(Variable = names(lower), Estimate = lower)
+upper_df <- data.frame(Variable = names(upper), Estimate = upper)
+lower_df <- lower_df[nrow(lower_df):1, ]
+upper_df <- upper_df[nrow(upper_df):1, ]
+
+
+model4 <- lmer(abortion_rate ~ (1 | State) + scale(Time) + DobbsInEffect*classification_4, data = dataWC)
+
+summary(model4)
+confint(model4)
+
+#throw out flipflop
+flipflop <- unique(dataWecountRateCorrect$State[dataWecountRateCorrect$Status == "flip_flop"])
+flipflop
+dataWecount5 <- dataWC %>% 
+  filter(!State %in% flipflop) %>% 
+  mutate(
+    classification_5 = ifelse(classification_5 != "control5" & classification_6 == "no_ban", "spillover_guttmacher", as.character(classification_5)),
+         classification_5 = ifelse(classification_6 == "no_ban" & Time < as.Date("2022-06-24"), "preDobbs", as.character(classification_5))
+  )
+
+dataWecount5 <- dataWecount5 %>% 
+    mutate(classification_5 = factor(classification_5, levels = c("preDobbs", "control5", "spillover_guttmacher", "bans")))
+
+model5 <- lmer(abortion_rate ~ (1 | State) + scale(Time) + classification_5, data = dataWecount5)
+summary(model5)
+confint(model5)
+
+# Classification 5 graph
+class5 <- dataWecount5 %>%
+  group_by(Time, classification_5) %>%
+  summarise(
+    avg_abortion_rate = mean(abortion_rate, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Plot the averages
+ggplot(class5, aes(x = Time, y = avg_abortion_rate, color = classification_5)) +
+  geom_line(size = 0.5) +
+    geom_point(size = 1) +  # Point size set to 2
+  geom_vline(xintercept = as.Date("2022-06-24"), color = "black", linetype = "dashed", size = 0.5) +
+  labs(title = "WeCount Average Abortion Rate by Classification 5",
+       x = "Time",
+       y = "Average Abortion Rate") +
+  scale_x_date(labels = scales::date_format("%b %Y")) + 
+  theme_minimal() 
+
+model6 <- lmer(abortion_rate ~ (1 | State) + scale(Time) + classification_6, data = dataWC)
+summary(model6)
+confint(model6)
+```
+
+```{r Mixed effects on provider percent change pre post dobbs}
+#2
+m2gpc <- lmer(abortion_rate ~ DobbsTime * classification_2 + (1 | State) + percent_change_20_24 + Date, 
+                    weights = 1 + 11 * (1-Monthly),  
+                    data = CombinedGuttmacherPost2015)
+                  
+summary(m2gpc)
+
+#3
+m3gpc <- lmer(abortion_rate ~ DobbsTime * classification_3 + (1 | State) + percent_change_20_24 + Date, 
+                    weights = 1 + 11 * (1-Monthly),  
+                    data = CombinedGuttmacherPost2015)
+                  
+round(summary(m3gpc)$coef, 4)
+
+#4
+m4gpc <- lmer(abortion_rate ~ DobbsTime * classification_4 + (1 | State) + percent_change_20_24 + Date, 
+                    weights = 1 + 11 * (1-Monthly),  
+                    data = CombinedGuttmacherPost2015)
+                  
+round(summary(m4gpc)$coef, 4)
+summary(m4gpc)
+
+
+#5
+m5gpc <- lmer(abortion_rate ~ DobbsTime * classification_5 + (1 | State) + percent_change_20_24 + Date, 
+                    weights = 1 + 11 * (1-Monthly),  
+                    data = CombinedGuttmacherPost2015)
+                  
+round(summary(m5gpc)$coef, 4)
+```
+
+
+```{r interpetations models with interactions}
+Sigma <- vcov(model2)
+beta <- summary(model2)$coef[, "Estimate"]
+beta
+contrast <- c(rep(0,9), 1, -1) #which terms I want 
+
+p <- as.numeric(t(beta)%*%contrast) #point_estimate
+
+v <- as.numeric(t(contrast)%*%Sigma%*%contrast) #variance 
+
+p + sqrt(v)*1.96
+p - sqrt(v)*1.96
+
+
+interp <- function(model, contrast){
+Sigma <- vcov(model)
+beta <- summary(model)$coef[, "Estimate"]
+beta
+
+p <- as.numeric(t(beta)%*%contrast) #point_estimate
+
+v <- as.numeric(t(contrast)%*%Sigma%*%contrast) #variance 
+
+upper <- p + sqrt(v)*qnorm(0.975)
+lower <- p - sqrt(v)*qnorm(0.975)
+print(paste("estimate:",p))
+print(paste("lower:",lower))
+print(paste("upwper:",upper))
+
+  print(paste(p, lower, upper, sep = ", "))
+}
+
+summary(model2)
+
+interp(model2, c(0, -1, rep(0,7), 1))
+
+interp(model5, c(0, -1, 0, 1))
+interp(model5, c(0,-1, 1, 0))
+interp(model5g7, c(0, -1, 0, 1))
+interp(model5g7, c(0,-1, 1, 0))
+
+summary(model5)
+summary(model5g7)
+```
+
+
+
+```{r final}
+results_final
+results <- results %>% 
+  mutate(
+    change_aggregate_rate = Estimate * 12,
+    aggregate_rate_lo_CI = Lower_CI * 12, 
+    aggregate_rate_up_CI = Upper_CI * 12,
+    
+) 
+df_transposed <- t(results)
+
+resultssimp <- results %>% 
+  select(-Number_States, -Total_repFPopulation)
+
+resultssimp <- resultssimp %>% 
+    mutate(Estimate_Rate = paste(Estimate, " (", round(Lower_CI, 4), ", ", round(Upper_CI, 4), ")", sep = "")) %>% 
+    mutate(Estimate_Rate_agg = paste(change_aggregate_rate, " (", round(aggregate_rate_lo_CI, 4), ", ", round(aggregate_rate_up_CI, 4), ")", sep = "")) %>% 
+    mutate(Estimate_Count = paste(round(change_aggregate_count_annual, -3), " (", round(aggregate_lo_CI, -3), ", ", round(aggregate_up_CI,-3), ")", sep = ""))
+```
+
+
+
+
+
+
+
+
+
+
